@@ -1,0 +1,20 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+#
+# The Hacker News reader.
+#
+#   bin/hackernews
+#
+# Everything the application is lives in lib/hackernews; this only puts it on
+# the load path and starts it. The bridge it is built on is a subproject of
+# its own, under cocoa/ -- except inside the .app bundle, where the two are
+# installed side by side and the second path simply is not there.
+
+root = File.expand_path('..', __dir__)
+["#{root}/lib", "#{root}/cocoa/lib"].each do |path|
+  $LOAD_PATH.unshift(path) if File.directory?(path) && !$LOAD_PATH.include?(path)
+end
+
+require 'hackernews'
+
+HackerNews::App.new.run

@@ -1,0 +1,10 @@
+# Compiled extension and the rest of mkmf's output.
+*.o
+*.bundle
+mkmf.log
+/cocoa/ext/objc/Makefile
+
+# The .app bundle rake builds; it hardcodes the Ruby that built it.
+/build/
+
+.DS_Store
