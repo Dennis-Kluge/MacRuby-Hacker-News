@@ -60,6 +60,12 @@ module HackerNews
         count.zero? ? 'No Stories Marked Read' : "Forget #{count} Read #{count == 1 ? 'Story' : 'Stories'}"
       )
       @clear_button.setEnabled(count.positive?)
+
+      saved = act(:saved_count).to_i
+      @clear_saved_button.setTitle(
+        saved.zero? ? 'Nothing Saved' : "Remove #{saved} Saved #{saved == 1 ? 'Article' : 'Articles'}"
+      )
+      @clear_saved_button.setEnabled(saved.positive?)
     end
 
     private
@@ -122,6 +128,15 @@ module HackerNews
 
       footnote('Turning history off keeps marks for this session only; ' \
                'nothing is saved to disk.')
+
+      section('Saved Articles')
+      @clear_saved_button = button_row('Remove Saved Articles') do |_sender|
+        act(:clear_saved)
+        refresh
+      end
+
+      footnote('Saved articles are kept in full, so they can be exported ' \
+               'long after the story has left the front page.')
 
       fit_window
     end

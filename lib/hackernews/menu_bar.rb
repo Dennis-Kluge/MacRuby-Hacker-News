@@ -94,6 +94,10 @@ module HackerNews
       command(menu, 'Open on Hacker News', :open_discussion, key: 'o', modifiers: CMD | SHIFT)
       command(menu, 'Open in Default Browser', :open_externally, key: 'o', modifiers: CMD | OPTION)
       separator(menu)
+      command(menu, 'Save Article', :save_article, key: 'd')
+      nest(menu, 'Export Saved Articles',
+           Export::ALL.map { |format| [format.label, :"export_#{format.key}"] })
+      separator(menu)
       command(menu, 'Share…', :share, key: 's', modifiers: CMD | SHIFT)
       command(menu, 'Copy Link', :copy_link, key: 'c', modifiers: CMD | SHIFT)
       separator(menu)
@@ -137,6 +141,9 @@ module HackerNews
       command(menu, 'Mark All Stories Unread', :mark_all_unread)
       separator(menu)
       # NSSplitViewController implements toggleSidebar:, reached via the chain.
+      # NSWindow implements this; it opens the toolbar's own palette.
+      standard(menu, 'Customise Toolbar…', 'runToolbarCustomizationPalette:')
+      separator(menu)
       standard(menu, 'Toggle Sidebar', 'toggleSidebar:', key: 's', modifiers: CMD | CONTROL)
       standard(menu, 'Enter Full Screen', 'toggleFullScreen:', key: 'f', modifiers: CMD | CONTROL)
       menu

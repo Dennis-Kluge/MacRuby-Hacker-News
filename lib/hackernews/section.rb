@@ -14,7 +14,8 @@ module HackerNews
     attr_reader :key, :label, :endpoint, :tags, :window, :shortcut
 
     def initialize(key:, label:, endpoint: :search, tags: 'story',
-                   window: nil, front_page_first: false, shortcut: nil)
+                   window: nil, front_page_first: false, shortcut: nil,
+                   local: false)
       @key      = key
       @label    = label
       @endpoint = endpoint
@@ -22,7 +23,14 @@ module HackerNews
       @window   = window
       @front_page_first = front_page_first
       @shortcut = shortcut
+      @local    = local
       freeze
+    end
+
+    # Answered from disk rather than from the API. Nothing is requested, there
+    # is no second page, and the search field filters what is already here.
+    def local?
+      @local
     end
 
     # Top starts with the real front page, then continues into the week's
@@ -40,7 +48,9 @@ module HackerNews
       new(key: :ask,  label: 'Ask',  tags: 'ask_hn',  window: WEEK,        shortcut: '4'),
       new(key: :show, label: 'Show', tags: 'show_hn', window: WEEK,        shortcut: '5'),
       # Job posts are time-sensitive and rarely upvoted, so newest wins.
-      new(key: :jobs, label: 'Jobs', tags: 'job', endpoint: :search_by_date, shortcut: '6')
+      new(key: :jobs, label: 'Jobs', tags: 'job', endpoint: :search_by_date, shortcut: '6'),
+      # Saved stories are kept locally, so this one asks nothing of anybody.
+      new(key: :saved, label: 'Saved', local: true, shortcut: '7')
     ].freeze
   end
 end

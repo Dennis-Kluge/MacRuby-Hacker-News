@@ -36,10 +36,6 @@ module HackerNews
       @split.splitViewItems.objectAtIndex(0).viewController.view.frame.width
     end
 
-    def subtitle=(text)
-      @window.setSubtitle(text)
-    end
-
     # Restore the saved size and position, falling back to the default. Only
     # used when actually running, so tests get a deterministic window.
     def restore_frame
@@ -97,7 +93,11 @@ module HackerNews
       # Assigning a content view controller resizes the window to that view's
       # fitting size, so the frame has to be set afterwards, not before.
       @window.setContentViewController(@split)
+      # Still named, for the Window menu and Mission Control, but not drawn:
+      # in a unified toolbar the title sits beside the controls rather than
+      # above them, and it was the widest thing in the row.
       @window.setTitle(title)
+      @window.setTitleVisibility(Cocoa::NSWindowTitleHidden)
       @window.setMinSize([720, 460])
       # Closing must not destroy it: the app stays running and the window is
       # reopened from the Dock or the Window menu.

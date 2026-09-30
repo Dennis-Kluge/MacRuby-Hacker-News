@@ -9,29 +9,11 @@ require 'minitest/autorun'
 require 'time'
 require 'cocoa'
 require 'cocoa/pooled_tests'
+require_relative 'support/stores'
 
 require 'hackernews'
 
 module HackerNews
-  # Stands in for NSUserDefaults.
-  class MemoryStore
-    def initialize
-      @data = {}
-    end
-    def read(key)
-      @data[key]
-    end
-    def write(key, values)
-      @data[key] = values.dup
-    end
-    def delete(key)
-      @data.delete(key)
-    end
-    def [](key)
-      @data[key]
-    end
-  end
-
   # Answers immediately from canned pages.
   class FakeAPI
     attr_reader :requests
@@ -621,5 +603,239 @@ class TestQuerySearchOptions < Minitest::Test
     assert_match(/Past Week/, described)
     # All Time is the absence of a period, not a fact worth stating.
     refute_match(/All Time/, Q.new(text: 'rust').to_s)
+  end
+end
+
+class TestFavorites < Minitest::Test
+  AT = Time.utc(2026, 9, 29, 12, 0, 0)
+
+  def setup
+    @store = HackerNews::MemoryText.new
+    @saved = build
+  end
+
+  def build(store = @store, now = AT)
+    HackerNews::Favorites.new(store: store, clock: -> { now })
+  end
+
+  def test_it_starts_empty
+    assert @saved.empty?
+    assert_equal 0, @saved.size
+    refute @saved.include?('1')
+  end
+
+  def test_saving_a_story
+    assert @saved.add(story(1))
+    assert @saved.include?('1')
+    assert @saved.saved?(story(1))
+    assert_equal 1, @saved.size
+  end
+
+  def test_saving_the_same_story_twice_changes_nothing
+    assert @saved.add(story(1))
+    refute @saved.add(story(1))
+    assert_equal 1, @saved.size
+  end
+
+  def test_removing
+    @saved.add(story(1))
+    assert @saved.remove('1')
+    refute @saved.remove('1')
+    assert @saved.empty?
+  end
+
+  def test_toggling_says_which_way_it_went
+    assert_equal :added,   @saved.toggle(story(1))
+    assert_equal :removed, @saved.toggle(story(1))
+    assert_nil @saved.toggle(nil)
+    assert_nil @saved.toggle({ title: 'no id' })
+  end
+
+  # Most recently saved first: that is the order you want to find them in.
+  def test_newest_first
+    @saved.add(story(1))
+    @saved.add(story(2))
+    @saved.add(story(3))
+
+    assert_equal %w[3 2 1], @saved.stories.map { |s| s[:id] }
+  end
+
+  # The API will not necessarily still answer for a story months later, so
+  # the whole record is kept rather than its identifier.
+  def test_it_keeps_the_story_not_just_the_id
+    @saved.add(story(1, 'A title worth keeping'))
+    kept = @saved.stories.first
+
+    assert_equal 'A title worth keeping', kept[:title]
+    assert_equal 'https://example.com/1',  kept[:url]
+    assert_equal 'example.com',            kept[:domain]
+    assert_equal 'a',                      kept[:author]
+    assert_equal AT.iso8601,               kept[:saved_at]
+  end
+
+  # View state has no business being persisted.
+  def test_it_does_not_keep_rendered_state
+    @saved.add(story(1).merge(age: '2 hours ago', saved_age: 'nonsense'))
+    assert_equal 'just now', @saved.stories.first[:age], 'age is how long ago it was saved'
+  end
+
+  def test_it_survives_a_relaunch
+    @saved.add(story(1))
+    @saved.add(story(2))
+
+    reopened = build
+    assert_equal 2, reopened.size
+    assert reopened.include?('1')
+    assert_equal %w[2 1], reopened.stories.map { |s| s[:id] }
+  end
+
+  def test_clearing_forgets_the_store_too
+    @saved.add(story(1))
+    @saved.clear
+
+    assert @saved.empty?
+    assert_empty build.stories
+  end
+
+  # A hand-edited or half-written value must not take the app down with it.
+  def test_a_broken_store_reads_as_empty
+    ['not json at all', '{"not":"an array"}', '[1, 2, 3]', ''].each do |bad|
+      assert_empty build(HackerNews::MemoryText.new(bad)).stories, bad.inspect
+    end
+  end
+
+  def test_records_without_an_id_are_dropped
+    store = HackerNews::MemoryText.new('[{"title":"orphan"},{"id":"7","title":"kept"}]')
+    assert_equal %w[7], build(store).stories.map { |s| s[:id] }
+  end
+
+  # The search field has to keep working in a section the API knows nothing
+  # about, so the filtering happens here.
+  def test_filtering
+    @saved.add(story(1, 'Rust in production'))
+    @saved.add(story(2, 'Writing a compiler'))
+
+    assert_equal 2, @saved.matching('').size
+    assert_equal 2, @saved.matching('   ').size
+    assert_equal %w[1], @saved.matching('rust').map { |s| s[:id] }
+    assert_equal %w[1], @saved.matching('RUST').map { |s| s[:id] }
+    assert_empty @saved.matching('nothing here')
+  end
+
+  def test_filtering_looks_at_the_domain_and_author_too
+    @saved.add(story(1, 'Something'))
+    assert_equal %w[1], @saved.matching('example.com').map { |s| s[:id] }
+    assert_equal %w[1], @saved.matching('a').map { |s| s[:id] }
+  end
+end
+
+class TestExport < Minitest::Test
+  AT = Time.utc(2026, 9, 29, 12, 0, 0)
+
+  STORIES = [
+    { id: '1', title: %q{Why <Discord> is "switching" & co}, url: 'https://blog.example.com/a',
+      domain: 'blog.example.com', author: 'alice', points: 42, comments: 7,
+      saved_at: '2026-09-20T10:00:00Z' },
+    # A text post has no article of its own.
+    { id: '2', title: 'Ask HN: something', url: nil, domain: nil, author: 'bob',
+      points: 1, comments: 1, saved_at: '2026-09-28T09:30:00Z' }
+  ].freeze
+
+  def render(key, stories = STORIES)
+    HackerNews::Export.render(key, stories, now: AT)
+  end
+
+  def test_every_format_has_a_name_and_an_extension
+    assert_equal %i[markdown json opml bookmarks], HackerNews::Export.keys
+    HackerNews::Export::ALL.each do |format|
+      refute_empty format.label
+      refute_empty format.extension
+      assert_equal "hacker-news-saved.#{format.extension}",
+                   HackerNews::Export.filename(format.key)
+    end
+  end
+
+  def test_an_unknown_format_falls_back
+    assert_equal :markdown, HackerNews::Export[:nonsense].key
+  end
+
+  # ---- markdown ----------------------------------------------------------
+
+  def test_markdown_links_every_story
+    out = render(:markdown)
+    assert_includes out, '## [Why <Discord> is "switching" & co](https://blog.example.com/a)'
+    assert_includes out, 'blog.example.com · 42 points · 7 comments · by alice'
+    assert_includes out, 'Discussion: https://news.ycombinator.com/item?id=1'
+  end
+
+  def test_markdown_pluralises
+    assert_includes render(:markdown), '1 point · 1 comment'
+  end
+
+  # ---- json --------------------------------------------------------------
+
+  def test_json_round_trips
+    parsed = JSON.parse(render(:json))
+
+    assert_equal 2, parsed['count']
+    assert_equal AT.iso8601, parsed['exported_at']
+    assert_equal %w[1 2], parsed['stories'].map { |s| s['id'] }
+    assert_equal 'Why <Discord> is "switching" & co', parsed['stories'][0]['title']
+    assert_equal '2026-09-20T10:00:00Z', parsed['stories'][0]['saved_at']
+    assert_equal 'https://news.ycombinator.com/item?id=2',
+                 parsed['stories'][1]['discussion']
+  end
+
+  # ---- opml --------------------------------------------------------------
+
+  def test_opml_is_well_formed_and_escaped
+    out = render(:opml)
+    assert_match(/\A<\?xml version="1.0" encoding="UTF-8"\?>/, out)
+    assert_includes out, '<opml version="2.0">'
+    assert_includes out, '</opml>'
+    assert_equal 2, out.scan('<outline ').size
+    # The title has all three of &, < and " in it.
+    assert_includes out, 'text="Why &lt;Discord&gt; is &quot;switching&quot; &amp; co"'
+    refute_includes out, '<Discord>'
+  end
+
+  def test_opml_points_at_both_the_article_and_the_discussion
+    out = render(:opml)
+    assert_includes out, 'url="https://blog.example.com/a"'
+    assert_includes out, 'htmlUrl="https://news.ycombinator.com/item?id=1"'
+  end
+
+  # ---- browser bookmarks -------------------------------------------------
+
+  def test_bookmarks_use_the_netscape_format
+    out = render(:bookmarks)
+    assert_match(/\A<!DOCTYPE NETSCAPE-Bookmark-file-1>/, out)
+    assert_includes out, '<DL><p>'
+    assert_equal 2, out.scan('<DT><A HREF=').size
+  end
+
+  # Importers read ADD_DATE as seconds since the epoch.
+  def test_bookmarks_carry_the_date_saved
+    assert_includes render(:bookmarks),
+                    %(ADD_DATE="#{Time.parse('2026-09-20T10:00:00Z').to_i}")
+  end
+
+  def test_a_story_with_no_article_falls_back_to_its_discussion
+    %i[markdown json opml bookmarks].each do |key|
+      assert_includes render(key), 'https://news.ycombinator.com/item?id=2', key.to_s
+    end
+  end
+
+  def test_an_unsaved_story_exports_without_a_date
+    plain = [{ id: '9', title: 'No date', url: 'https://example.com/9' }]
+    refute_includes render(:bookmarks, plain), 'ADD_DATE'
+    assert_includes render(:markdown, plain), 'No date'
+  end
+
+  def test_nothing_saved_still_renders
+    %i[markdown json opml bookmarks].each do |key|
+      refute_empty render(key, []), key.to_s
+    end
+    assert_equal 0, JSON.parse(render(:json, []))['count']
   end
 end

@@ -14,7 +14,9 @@ module HackerNews
       @settings = settings
     end
 
-    def story(story, rank:, read:, icon: nil)
+    STAR = '★'
+
+    def story(story, rank:, read:, icon: nil, saved: false)
       meta_size, _body, title_size = @settings.font_sizes
 
       compose do |out|
@@ -35,7 +37,7 @@ module HackerNews
                                       : Cocoa::NSColor.labelColor,
                           head_indent: RANK_WIDTH)
 
-        out << attributed("\n#{meta_line(story)}",
+        out << attributed("\n#{meta_line(story, saved: saved)}",
                           font: Cocoa::NSFont.systemFontOfSize(meta_size),
                           color: read ? Cocoa::NSColor.tertiaryLabelColor
                                       : Cocoa::NSColor.secondaryLabelColor,
@@ -132,13 +134,22 @@ module HackerNews
     # posted it, and when. The age matters most in search results, which reach
     # back years, but it belongs on every row for the same reason it does on
     # the site itself.
-    def meta_line(story)
+    def meta_line(story, saved: false)
       parts = []
+      # First, where it cannot be missed. In the Saved section every story
+      # carries one, so the caller leaves it off there.
+      parts << STAR if saved
       parts << story[:domain] if story[:domain]
       parts << pluralize(story[:points], 'point')
       parts << pluralize(story[:comments], 'comment')
       parts << story[:author]
-      parts << story[:age] unless story[:age].to_s.empty?
+      # In the Saved section the useful date is when it was saved, not when it
+      # was posted -- and it has to say which, or it reads as the story's age.
+      if !story[:saved_age].to_s.empty?
+        parts << "saved #{story[:saved_age]}"
+      elsif !story[:age].to_s.empty?
+        parts << story[:age]
+      end
       parts.join(' · ')
     end
 

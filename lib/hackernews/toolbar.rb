@@ -14,6 +14,11 @@ module HackerNews
     Custom = Struct.new(:identifier, :view, keyword_init: true)
     # The system's own share button; +items+ is asked for what to share.
     Share  = Struct.new(:identifier, :label, :items, keyword_init: true)
+    # A set of related choices AppKit draws as segments while they fit and
+    # collapses into one menu button when they do not. +on_select+ is called
+    # with the index picked.
+    Group = Struct.new(:identifier, :label, :titles, :selected, :on_select,
+                       keyword_init: true)
     # The system's own search field, which collapses to a magnifier when the
     # window gets narrow. +on_search+ is called with the text as it is typed.
     Search = Struct.new(:identifier, :label, :placeholder, :autosave, :on_search,
@@ -48,7 +53,7 @@ module HackerNews
         'HNToolbarDelegate', 'NSObject', protocols: %w[NSToolbarDelegate]
       ) do |c|
         c.define('toolbarAllowedItemIdentifiers:', '@@:@') do |receiver, _t|
-          owner_of(receiver).identifiers
+          owner_of(receiver).allowed_identifiers
         end
         c.define('toolbarDefaultItemIdentifiers:', '@@:@') do |receiver, _t|
           owner_of(receiver).identifiers
@@ -64,12 +69,27 @@ module HackerNews
       @items      = items
       @built      = {}
       @targets    = []
+      @groups     = {}
     end
 
+    # Move a group's selection without going through its action.
+    def select(identifier, index)
+      @groups[identifier]&.setSelectedIndex(index)
+    end
+
+    # The arrangement the toolbar starts with, and the one Restore Defaults
+    # goes back to.
     def identifiers
       @items.map do |item|
         item == SPACE ? Cocoa::NSToolbarFlexibleSpaceItemIdentifier : item.identifier
       end
+    end
+
+    # Everything the customisation palette offers: our own items, plus the
+    # spacers, without which rearranging leaves no way to push things apart.
+    def allowed_identifiers
+      identifiers | [Cocoa::NSToolbarFlexibleSpaceItemIdentifier,
+                     Cocoa::NSToolbarSpaceItemIdentifier]
     end
 
     def install(window)
@@ -81,7 +101,10 @@ module HackerNews
       toolbar = Cocoa::NSToolbar.alloc.initWithIdentifier(@identifier)
       toolbar.setDelegate(delegate)
       toolbar.setDisplayMode(2) # icon only
-      toolbar.setAllowsUserCustomization(false)
+      toolbar.setAllowsUserCustomization(true)
+      # Remember how it was rearranged, or customising it would be a gesture
+      # that lasts until the next launch.
+      toolbar.setAutosavesConfiguration(true)
 
       window.setToolbar(toolbar)
       window.setToolbarStyle(Cocoa::NSWindowToolbarStyleUnified)
@@ -150,10 +173,35 @@ module HackerNews
       item
     end
 
+    # One item holding all the choices, rather than a segmented control in a
+    # Custom item. The difference is that AppKit owns the layout, so it can
+    # collapse the group itself when the toolbar runs out of room -- which a
+    # view handed over in a Custom item can never do.
+    def build_group(spec)
+      target = Cocoa.action { |sender| spec.on_select.call(sender.selectedIndex) }
+      @targets << target # controls do not retain their target
+
+      item = Cocoa::NSToolbarItemGroup
+             .groupWithItemIdentifier_titles_selectionMode_labels_target_action(
+               spec.identifier, spec.titles,
+               Cocoa::NSToolbarItemGroupSelectionModeSelectOne,
+               nil, target, Cocoa::ACTION_SELECTOR
+             )
+      item.setLabel(spec.label)
+      # Segments while they fit; a menu button when they do not.
+      item.setControlRepresentation(
+        Cocoa::NSToolbarItemGroupControlRepresentationAutomatic
+      )
+      item.setSelectedIndex(spec.selected.to_i)
+      @groups[spec.identifier] = item
+      item
+    end
+
     def build(spec)
       return nil if spec.nil?
       return build_share(spec) if spec.is_a?(Share)
       return build_search(spec) if spec.is_a?(Search)
+      return build_group(spec) if spec.is_a?(Group)
 
       item = Cocoa::NSToolbarItem.alloc.initWithItemIdentifier(spec.identifier)
 

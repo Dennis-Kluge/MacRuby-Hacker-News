@@ -12,10 +12,11 @@ module HackerNews
     # a row rather than walking the whole archive.
     MAX_EMPTY_PAGES = 5
 
-    def initialize(api:, history:, settings:)
+    def initialize(api:, history:, settings:, favorites: nil)
       @api        = api
       @history    = history
       @settings   = settings
+      @favorites  = favorites
       @generation = 0
       @query      = Query.new(section: settings.section)
       reset
@@ -53,6 +54,11 @@ module HackerNews
       @query.search?
     end
 
+    # Answered from disk rather than from the API.
+    def local?
+      @query.section.local?
+    end
+
     # Ask a different question. Returns true when it really is a different
     # one, which is the caller's cue to start the list again -- and false for
     # the keystroke that changed nothing.
@@ -87,6 +93,7 @@ module HackerNews
     # Append the next page, if there is one and nothing is already in flight.
     def load_next(&on_event)
       return if @loading || !@more
+      return load_saved(&on_event) if local?
 
       @loading = true
       notify(on_event, :loading)
@@ -119,6 +126,14 @@ module HackerNews
           notify(on_event, :loaded, added)
         end
       end
+    end
+
+    # The saved stories are already here: no request, no second page, and the
+    # search field narrows what is in hand rather than asking for more.
+    def load_saved(&on_event)
+      @more = false
+      added = append(@favorites ? @favorites.matching(@query.text) : [])
+      notify(on_event, :loaded, added)
     end
 
     private

@@ -12,6 +12,7 @@ require 'tmpdir'
 require 'fileutils'
 require 'cocoa'
 require 'cocoa/pooled_tests'
+require_relative 'support/stores'
 
 require 'hackernews'
 require_relative 'support/test_support'
@@ -474,22 +475,31 @@ class TestHackerNewsChrome < Minitest::Test
     assert_equal Cocoa::NSWindowToolbarStyleUnified, window.toolbarStyle
 
     identifiers = app.toolbar.identifiers
-    assert_includes identifiers, HackerNews::App::RELOAD_ITEM
-    assert_includes identifiers, HackerNews::App::OPEN_ITEM
+    assert_includes identifiers, HackerNews::App::SECTION_ITEM
+    assert_includes identifiers, HackerNews::App::SEARCH_ITEM
     assert_includes identifiers, HackerNews::App::HN_ITEM
+    assert_includes identifiers, HackerNews::App::SHARE_ITEM
+
+    # Each of these had a button that said what a shortcut, a double-click or
+    # the status line already said.
+    refute_includes identifiers, 'hn.open'
+    refute_includes identifiers, 'hn.spinner'
+    refute_includes identifiers, 'hn.reload'
   end
 
   def test_toolbar_items_carry_sf_symbols
-    item = app.toolbar.item(HackerNews::App::RELOAD_ITEM)
+    item = app.toolbar.item(HackerNews::App::HN_ITEM)
     refute_nil item
-    assert_equal 'Reload', item.label.to_s
+    assert_equal 'Discussion', item.label.to_s
     refute_nil item.image
   end
 
-  def test_status_goes_to_the_window_subtitle
+  # The status line lives under the story list now: in a unified toolbar the
+  # subtitle sat beside the controls and was truncated by them.
+  def test_status_goes_under_the_story_list
     app.load_front_page
-    assert_equal app.status_text, window.subtitle.to_s
-    assert_match(/1 story/, window.subtitle.to_s)
+    assert_equal app.status_text, app.story_view.status
+    assert_match(/1 story/, app.story_view.status)
   end
 
   def test_lists_use_the_modern_table_styles
@@ -1897,9 +1907,17 @@ class TestHackerNewsSections < Minitest::Test
     app.settings.reset
   end
 
+  # The sections that stand for something on Hacker News are exactly Hacker
+  # News's own. Saved is ours, and is answered from disk.
   def test_the_sections_match_hacker_news
-    assert_equal %i[top new best ask show jobs], HackerNews::Section.keys
-    assert_equal %w[Top New Best Ask Show Jobs], HackerNews::Section.labels
+    remote = HackerNews::Section::ALL.reject(&:local?)
+    assert_equal %i[top new best ask show jobs], remote.map(&:key)
+    assert_equal %w[Top New Best Ask Show Jobs], remote.map(&:label)
+  end
+
+  def test_saved_is_the_only_local_section
+    local = HackerNews::Section::ALL.select(&:local?)
+    assert_equal [:saved], local.map(&:key)
   end
 
   def test_switching_section_reloads_from_that_section
@@ -2437,10 +2455,16 @@ class TestHackerNewsContextMenu < Minitest::Test
   def test_it_offers_what_a_story_row_can_do
     # The read item is worded for whichever story is being acted on, so it is
     # matched by shape rather than by its exact title.
-    fixed = titles.reject { |t| t.start_with?('Mark as') }
+    fixed = titles.reject { |t| t.start_with?('Mark as') || saved_item?(t) }
     assert_equal ['Open Link', 'Open on Hacker News', 'Copy Article Link',
                   'Copy Comments Link', 'Share…'], fixed
     assert_equal 1, titles.count { |t| t.start_with?('Mark as') }
+    assert_equal 1, titles.count { |t| saved_item?(t) }
+  end
+
+  # Worded for whichever story is being acted on, like the read item.
+  def saved_item?(title)
+    ['Save Article', 'Remove from Saved'].include?(title)
   end
 
   def test_the_two_copy_commands_differ
@@ -3029,5 +3053,444 @@ class TestHackerNewsSearchOptions < Minitest::Test
     item.target.objc_send(Cocoa::ACTION_SELECTOR, item)
 
     assert_equal :week, app.period.key
+  end
+end
+
+# Saving articles, the section that shows them, and writing them out.
+class TestHackerNewsSaved < Minitest::Test
+  def self.app
+    @app ||= begin
+      @stub  = HackerNews::StubAPI.new
+      @saved = HackerNews::Favorites.new(store: HackerNews::MemoryText.new)
+      HackerNews::App.new(api: @stub, favorites: @saved)
+    end
+  end
+
+  def self.stub
+    app
+    @stub
+  end
+
+  def app
+    self.class.app
+  end
+
+  def stub
+    self.class.stub
+  end
+
+  def saved
+    app.favorites
+  end
+
+  def setup
+    app.settings.reset
+    stub.error = nil
+    stub.pages = nil
+    stub.search_results = {}
+    stub.stories = [
+      { id: '42', title: 'First story', author: 'alice', points: 9, comments: 3,
+        url: 'https://example.com/a', domain: 'example.com' },
+      { id: '43', title: 'Second story', author: 'bob', points: 4, comments: 1,
+        url: 'https://example.com/b', domain: 'example.com' }
+    ]
+    stub.tree = { 'children' => [] }
+    saved.clear
+    app.search_delay = 0
+    app.search('')
+    app.show_section(:top)
+    app.load_front_page
+  end
+
+  def teardown
+    saved.clear
+    app.search('')
+    app.show_section(:top)
+    app.settings.reset
+  end
+
+  # ---- saving ------------------------------------------------------------
+
+  def test_saving_the_selected_story
+    app.select_story(0)
+    assert_equal :added, app.toggle_saved
+
+    assert_equal 1, app.saved_count
+    assert saved.include?('42')
+    assert_match(/Saved/, app.status_text)
+  end
+
+  def test_saving_again_removes_it
+    app.select_story(0)
+    app.toggle_saved
+    assert_equal :removed, app.toggle_saved
+
+    assert_equal 0, app.saved_count
+    assert_match(/Removed/, app.status_text)
+  end
+
+  def test_saving_with_nothing_selected
+    app.story_view.deselect
+    assert_nil app.toggle_saved
+    assert_match(/Select a story first/, app.status_text)
+  end
+
+  # The whole story is kept, because the API will not necessarily still
+  # answer for it when the export happens.
+  def test_it_keeps_the_whole_story
+    app.select_story(0)
+    app.toggle_saved
+
+    kept = saved.stories.first
+    assert_equal 'First story',            kept[:title]
+    assert_equal 'https://example.com/a',  kept[:url]
+    assert_equal 'alice',                  kept[:author]
+    refute_nil kept[:saved_at]
+  end
+
+  # ---- the Saved section -------------------------------------------------
+
+  def test_saved_is_a_section_of_its_own
+    assert_includes HackerNews::Section.keys, :saved
+    assert HackerNews::Section[:saved].local?
+    assert_equal '7', HackerNews::Section[:saved].shortcut
+  end
+
+  def test_the_section_shows_what_was_saved
+    app.select_story(0)
+    app.toggle_saved
+    app.show_section(:saved)
+
+    assert app.list.local?
+    assert_equal 1, app.list.size
+    assert_equal '42', app.list[0][:id]
+  end
+
+  # Nothing is requested for it, which is the point of a local section.
+  def test_the_section_asks_the_api_for_nothing
+    app.select_story(0)
+    app.toggle_saved
+    before = stub.last_request
+    app.show_section(:saved)
+
+    assert_same before, stub.last_request
+    refute app.list.more?, 'there is no second page of saved stories'
+  end
+
+  def test_saving_while_the_section_is_showing_updates_it
+    app.show_section(:saved)
+    assert_equal 0, app.list.size
+
+    app.show_section(:top)
+    app.select_story(1)
+    app.toggle_saved
+    app.show_section(:saved)
+    assert_equal 1, app.list.size
+
+    # And removing it takes the row away again.
+    app.select_story(0)
+    app.toggle_saved
+    assert_equal 0, app.list.size
+  end
+
+  def test_the_search_field_filters_the_saved_list
+    app.show_section(:top)
+    app.select_story(0)
+    app.toggle_saved
+    app.select_story(1)
+    app.toggle_saved
+    app.show_section(:saved)
+    assert_equal 2, app.list.size
+
+    app.search('second')
+    assert_equal 1, app.list.size
+    assert_equal '43', app.list[0][:id]
+
+    app.search('')
+    assert_equal 2, app.list.size
+  end
+
+  # Sorting and windowing are questions for the API, so the bar has nothing
+  # to say about a list held in hand.
+  def test_the_filter_bar_stays_hidden_while_searching_saved
+    app.show_section(:top)
+    app.select_story(0)
+    app.toggle_saved
+    app.show_section(:saved)
+
+    app.search('first')
+    assert app.searching?
+    refute app.search_bar.visible?
+  end
+
+  def test_an_empty_saved_section_says_so
+    app.show_section(:saved)
+
+    assert app.story_view.empty_visible?
+    assert_match(/Nothing saved/, app.story_view.empty_text)
+    assert_equal HackerNews::StoryListView::NO_SAVED_SYMBOL,
+                 app.story_view.placeholder.symbol_name
+    assert_match(/Nothing saved/, app.status_text)
+  end
+
+  # "2 days ago" beside a saved story reads as the story's age unless it says
+  # which date it means.
+  def test_a_saved_row_says_when_it_was_saved
+    app.select_story(0)
+    app.toggle_saved
+    app.show_section(:saved)
+
+    meta = app.story_view.cell(0).string.to_s.split("\n").last
+    assert_includes meta, 'saved just now'
+  end
+
+  def test_a_story_row_shows_its_own_age
+    meta = app.story_view.cell(0).string.to_s.split("\n").last
+    refute_includes meta, 'saved '
+  end
+
+  # A star marks the saved ones where that distinguishes anything; in the
+  # Saved section every story carries one, so it would say nothing.
+  def test_a_star_marks_a_saved_story
+    app.select_story(0)
+    app.toggle_saved
+    app.story_view.invalidate
+
+    assert_includes app.story_view.cell(0).string.to_s, HackerNews::Typography::STAR
+    refute_includes app.story_view.cell(1).string.to_s, HackerNews::Typography::STAR
+
+    app.show_section(:saved)
+    refute_includes app.story_view.cell(0).string.to_s, HackerNews::Typography::STAR
+  end
+
+  def test_the_status_counts_saved_stories
+    app.select_story(0)
+    app.toggle_saved
+    app.show_section(:saved)
+
+    assert_match(/1 saved story/, app.status_text)
+    refute_match(/scroll for more/, app.status_text)
+  end
+
+  # ---- the context menu --------------------------------------------------
+
+  def test_the_context_menu_words_itself_for_the_story
+    app.story_view.select(0)
+    app.story_view.prepare_context_menu
+    item = context_item
+    assert_equal 'Save Article', item.title.to_s
+
+    app.toggle_saved
+    app.story_view.prepare_context_menu
+    assert_equal 'Remove from Saved', context_item.title.to_s
+  end
+
+  def context_item
+    menu = app.story_view.context_menu
+    (0...menu.numberOfItems).map { |i| menu.itemAtIndex(i) }
+                            .find { |i| ['Save Article', 'Remove from Saved'].include?(i.title.to_s) }
+  end
+
+  # ---- the menus ---------------------------------------------------------
+
+  def test_the_file_menu_offers_saving_and_exporting
+    save = app.menu_bar.item_titled('File', 'Save Article')
+    refute_nil save
+    assert_equal 'd', save.keyEquivalent.to_s
+
+    export = app.menu_bar.item_titled('File', 'Export Saved Articles')
+    refute_nil export
+    titles = (0...export.submenu.numberOfItems).map { |i| export.submenu.itemAtIndex(i).title.to_s }
+    assert_equal HackerNews::Export.labels, titles
+  end
+
+  # ---- exporting ---------------------------------------------------------
+
+  def with_export_to(path)
+    app.save_panel_runner = ->(_format) { path }
+    yield
+  ensure
+    app.save_panel_runner = nil
+  end
+
+  def test_exporting_writes_the_file
+    app.select_story(0)
+    app.toggle_saved
+
+    Dir.mktmpdir('hn-export') do |dir|
+      HackerNews::Export.keys.each do |key|
+        path = File.join(dir, HackerNews::Export.filename(key))
+        with_export_to(path) { assert_equal path, app.export_saved(key) }
+
+        assert File.file?(path), "#{key} should have been written"
+        assert_includes File.read(path), 'First story'
+        assert_match(/Exported 1 story/, app.status_text)
+      end
+    end
+  end
+
+  def test_exporting_nothing_does_not_open_a_panel
+    asked = false
+    app.save_panel_runner = ->(_f) { asked = true }
+
+    assert_nil app.export_saved(:markdown)
+    refute asked, 'there is nothing to ask about'
+    assert_match(/Nothing saved to export/, app.status_text)
+  ensure
+    app.save_panel_runner = nil
+  end
+
+  def test_a_dismissed_panel_writes_nothing
+    app.select_story(0)
+    app.toggle_saved
+
+    with_export_to(nil) { assert_nil app.export_saved(:markdown) }
+    assert_match(/cancelled/, app.status_text)
+  end
+
+  def test_a_path_that_cannot_be_written_is_reported
+    app.select_story(0)
+    app.toggle_saved
+
+    with_export_to('/nowhere-at-all/hacker-news-saved.md') do
+      assert_nil app.export_saved(:markdown)
+    end
+    assert_match(/Could not write/, app.status_text)
+  end
+
+  def test_clearing_from_the_preferences
+    app.select_story(0)
+    app.toggle_saved
+    assert_equal 1, app.saved_count
+
+    app.clear_saved
+    assert_equal 0, app.saved_count
+    assert_match(/cleared/, app.status_text)
+  end
+end
+
+# The title bar carries controls; the list carries its own status line.
+class TestHackerNewsToolbarLayout < Minitest::Test
+  def self.app
+    @app ||= begin
+      @stub = HackerNews::StubAPI.new
+      @stub.stories = [
+        { id: '1', title: 'Only story', author: 'a', points: 1, comments: 1,
+          url: 'https://example.com/a', domain: 'example.com' }
+      ]
+      HackerNews::App.new(api: @stub,
+                          favorites: HackerNews::Favorites.new(
+                            store: HackerNews::MemoryText.new
+                          ))
+    end
+  end
+
+  def app
+    self.class.app
+  end
+
+  def window
+    app.main_window.window
+  end
+
+  def setup
+    app.settings.reset
+    app.search_delay = 0
+    app.search('')
+    app.show_section(:top)
+    app.load_front_page
+  end
+
+  # ---- the title bar -----------------------------------------------------
+
+  # Named for the Window menu and Mission Control, but not drawn: in a
+  # unified toolbar the title sits beside the controls, not above them.
+  def test_the_window_is_named_but_the_title_is_not_drawn
+    assert_equal HackerNews::App::APP_NAME, window.title.to_s
+    assert_equal Cocoa::NSWindowTitleHidden, window.titleVisibility
+  end
+
+  def test_the_toolbar_carries_only_what_has_no_other_route
+    identifiers = app.toolbar.identifiers
+
+    assert_equal [HackerNews::App::SECTION_ITEM,
+                  Cocoa::NSToolbarFlexibleSpaceItemIdentifier.to_s,
+                  HackerNews::App::SEARCH_ITEM,
+                  HackerNews::App::HN_ITEM,
+                  HackerNews::App::SHARE_ITEM],
+                 identifiers.map(&:to_s)
+  end
+
+  # Reload is ⌘R and a File menu entry, and the list refetches on a timer.
+  def test_reload_kept_its_command_after_losing_its_button
+    refute_includes app.toolbar.identifiers.map(&:to_s), 'hn.reload'
+
+    item = app.menu_bar.item_titled('File', 'Reload Stories')
+    refute_nil item
+    assert_equal 'r', item.keyEquivalent.to_s
+    assert app.commands.key?(:reload)
+  end
+
+  # ---- rearranging -------------------------------------------------------
+
+  def test_the_toolbar_can_be_rearranged_and_remembers_it
+    toolbar = window.toolbar
+    assert toolbar.allowsUserCustomization
+    assert toolbar.autosavesConfiguration
+  end
+
+  # Without the spacers there is no way to push things apart again.
+  def test_the_palette_offers_the_spacers
+    allowed = app.toolbar.allowed_identifiers.map(&:to_s)
+
+    assert_includes allowed, Cocoa::NSToolbarFlexibleSpaceItemIdentifier.to_s
+    assert_includes allowed, Cocoa::NSToolbarSpaceItemIdentifier.to_s
+    app.toolbar.identifiers.each { |id| assert_includes allowed, id.to_s }
+  end
+
+  def test_the_view_menu_opens_the_palette
+    item = app.menu_bar.item_titled('View', 'Customise Toolbar…')
+    refute_nil item
+    assert_equal 'runToolbarCustomizationPalette:', item.action.to_s
+  end
+
+  # ---- the status line ---------------------------------------------------
+
+  def test_it_says_what_the_list_is_showing
+    assert_match(/1 story/, app.story_view.status)
+
+    app.search('nothing at all matches this')
+    assert_match(/Nothing found/, app.story_view.status)
+  ensure
+    app.search('')
+  end
+
+  def test_it_sits_under_the_list_rather_than_over_it
+    bar   = app.story_view.status_bar
+    pane  = app.story_view.pane
+
+    assert_equal pane.objc_address, bar.container.objc_address
+    # The list is above the bar, and the two do not overlap.
+    content = pane.subviews.objectAtIndex(0)
+    assert_operator content.frame.y, :>=, HackerNews::StatusBar::HEIGHT - 0.5
+    assert_operator content.frame.height, :>, 0
+  end
+
+  # A long status must lose its end, not its beginning -- the count is what
+  # the eye goes to first.
+  def test_a_long_status_truncates_at_the_tail
+    assert_equal 4, app.story_view.status_bar.label.cell.lineBreakMode
+  end
+
+  def test_the_bar_keeps_its_height_as_the_window_resizes
+    bar = app.story_view.status_bar
+    before = bar.container.frame.height
+
+    window.setContentSize([820, 500])
+    window.contentView.layoutSubtreeIfNeeded
+    app.pump(0.3) { false }
+
+    refute_equal before, bar.container.frame.height, 'the pane should have resized'
+    assert_match(/story/, bar.text)
   end
 end

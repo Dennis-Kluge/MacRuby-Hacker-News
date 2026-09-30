@@ -8,6 +8,7 @@ module HackerNews
     # What the empty state shows, depending on why the list is empty.
     NO_RESULTS_SYMBOL = 'magnifyingglass'
     NO_STORIES_SYMBOL = 'newspaper'
+    NO_SAVED_SYMBOL   = 'star'
 
     # One menu delegate for every story list, each finding its own owner.
     def self.menu_owners
@@ -53,10 +54,12 @@ module HackerNews
     # +on_select+ fires when the highlighted row changes, +on_activate+ on a
     # double click, and +on_prefetch+ when the end of the list comes into view.
     def initialize(list:, typography:, width:, height:, favicons: nil,
-                   context: {}, on_select:, on_activate:, on_prefetch:)
+                   favorites: nil, context: {}, on_select:, on_activate:,
+                   on_prefetch:)
       super(typography)
       @list        = list
       @favicons    = favicons
+      @favorites   = favorites
       @context     = context
       @on_select   = on_select
       @on_activate = on_activate
@@ -69,14 +72,25 @@ module HackerNews
                                      symbol: NO_STORIES_SYMBOL, description: 'Stories')
       # The table is what the list normally shows; the message is the exception.
       @placeholder.hide
+      @status_bar = StatusBar.new(over: @placeholder.container,
+                                  width: width, height: height)
     end
 
-    # The placeholder's container, so a message can stand in for the table.
+    # The status bar's container: the table, whatever is standing in for it,
+    # and the line underneath saying what it is showing.
     def pane
-      @placeholder.container
+      @status_bar.container
     end
 
-    attr_reader :placeholder
+    attr_reader :placeholder, :status_bar
+
+    def status=(text)
+      @status_bar.text = text
+    end
+
+    def status
+      @status_bar.text
+    end
 
     # Say why the list is empty, or get out of the way now that it is not.
     def show_empty(message, symbol: NO_STORIES_SYMBOL)
@@ -153,8 +167,17 @@ module HackerNews
       return '' if story.nil?
 
       @rendered[row] ||= @typography.story(
-        story, rank: row + 1, read: @list.read?(story), icon: icon_for(story)
+        story, rank: row + 1, read: @list.read?(story), icon: icon_for(story),
+        saved: starred?(story)
       )
+    end
+
+    # A star says "this one is saved", which is worth nothing in the section
+    # where every story is.
+    def starred?(story)
+      return false if @favorites.nil? || @list.local?
+
+      @favorites.saved?(story)
     end
 
     # Redraw the rows showing a site whose icon has just arrived.
@@ -197,11 +220,19 @@ module HackerNews
       clicked = @view.clickedRow
       @context_row = clicked.negative? ? @view.selectedRow : clicked
 
-      return if @read_item.nil?
+      enabled = !@context_row.negative?
 
-      read = @context.fetch(:read?, -> { false }).call
-      @read_item.setTitle(read ? 'Mark as Unread' : 'Mark as Read')
-      @read_item.setEnabled(!@context_row.negative?)
+      if @read_item
+        read = @context.fetch(:read?, -> { false }).call
+        @read_item.setTitle(read ? 'Mark as Unread' : 'Mark as Read')
+        @read_item.setEnabled(enabled)
+      end
+
+      return if @saved_item.nil?
+
+      saved = @context.fetch(:saved?, -> { false }).call
+      @saved_item.setTitle(saved ? 'Remove from Saved' : 'Save Article')
+      @saved_item.setEnabled(enabled)
     end
 
     def icon_for(story)
@@ -258,7 +289,8 @@ module HackerNews
       add_context_item('Copy Article Link', :copy_article)
       add_context_item('Copy Comments Link', :copy_comments)
       @context_menu.addItem(Cocoa::NSMenuItem.separatorItem)
-      @read_item = add_context_item('Mark as Read', :toggle_read)
+      @read_item  = add_context_item('Mark as Read', :toggle_read)
+      @saved_item = add_context_item('Save Article', :toggle_saved)
       @context_menu.addItem(Cocoa::NSMenuItem.separatorItem)
       add_context_item('Share…', :share)
 

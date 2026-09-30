@@ -13,10 +13,7 @@ module HackerNews
     GUIDELINES  = 'https://news.ycombinator.com/newsguidelines.html'
 
     TOOLBAR_ID   = 'hn.toolbar'
-    RELOAD_ITEM  = 'hn.reload'
-    OPEN_ITEM    = 'hn.open'
     HN_ITEM      = 'hn.discussion'
-    SPINNER_ITEM = 'hn.spinner'
     SECTION_ITEM = 'hn.sections'
     SHARE_ITEM   = 'hn.share'
     SEARCH_ITEM  = 'hn.search'
@@ -63,14 +60,18 @@ module HackerNews
 
     # ---- construction --------------------------------------------------------
 
-    def initialize(api: API.new)
+    # Favorites is injectable for the same reason the API is: a test should
+    # not write to the reader's real saved list.
+    def initialize(api: API.new, favorites: nil)
       @api    = api
       @status = ''
 
       Settings.register_defaults
       @settings   = Settings.new
       @history    = ReadingHistory.new(@settings)
-      @list       = StoryList.new(api: @api, history: @history, settings: @settings)
+      @favorites  = favorites || Favorites.new
+      @list       = StoryList.new(api: @api, history: @history, settings: @settings,
+                                  favorites: @favorites)
       @typography = Typography.new(@settings)
 
       @nsapp = Cocoa::NSApplication.sharedApplication
@@ -86,7 +87,7 @@ module HackerNews
       @menu_bar.install(@nsapp)
     end
 
-    attr_reader :favicons
+    attr_reader :favicons, :favorites
 
     attr_reader :settings, :list, :history, :typography,
                 :story_view, :thread_view, :main_window, :toolbar, :menu_bar
@@ -135,9 +136,18 @@ module HackerNews
         find:             -> { focus_search },
         clear_search:     -> { clear_search },
         share:            -> { share_selected },
+        save_article:     -> { toggle_saved },
         copy_link:        -> { copy_link },
         guidelines:       -> { open_link(GUIDELINES, title: 'Guidelines') }
-      }.merge(section_commands).merge(search_commands)
+      }.merge(section_commands).merge(search_commands).merge(export_commands)
+    end
+
+    # One command per format, so each gets a menu entry of its own rather than
+    # a panel the reader has to configure before it does anything.
+    def export_commands
+      Export::ALL.each_with_object({}) do |format, commands|
+        commands[:"export_#{format.key}"] = -> { export_saved(format.key) }
+      end
     end
 
     # One command per section, so each can have a shortcut.
@@ -257,10 +267,12 @@ module HackerNews
       @search_bar
     end
 
+    # Sorting and windowing are questions for the API. The saved list is
+    # filtered in hand, so the bar stays out of the way there.
     def update_search_bar
       return if @search_bar.nil?
 
-      @list.searching? ? @search_bar.show(@list.query) : @search_bar.hide
+      @list.searching? && !@list.local? ? @search_bar.show(@list.query) : @search_bar.hide
     end
 
     def searching?
@@ -336,12 +348,10 @@ module HackerNews
       mark_visited(story)
       @thread_view.present(CommentThread.new, message: 'Loading comments…')
       @loading_comments = true
-      @spinner.startAnimation(nil)
       status("Loading #{pluralize(story[:comments], 'comment')}…")
 
       @api.item(story[:id]) do |tree, error|
         @loading_comments = false
-        @spinner.stopAnimation(nil)
         if error
           @thread_view.show_placeholder("Could not load comments — #{error}")
           next status("Could not load comments: #{error}")
@@ -412,6 +422,96 @@ module HackerNews
       @story_view.invalidate
       @thread_view.invalidate
       apply_expansion unless @thread_view.thread.empty?
+    end
+
+    # ---- saved articles ------------------------------------------------------
+
+    def saved?(story)
+      @favorites.saved?(story)
+    end
+
+    def saved_count
+      @favorites.size
+    end
+
+    # Returns :added, :removed, or nil when there was nothing to act on.
+    def toggle_saved(story = selected_story)
+      if story.nil?
+        status('Select a story first')
+        return nil
+      end
+
+      result = @favorites.toggle(story)
+      status(result == :added ? "Saved “#{story[:title]}”"
+                              : "Removed “#{story[:title]}” from Saved")
+      saved_changed(story)
+      result
+    end
+
+    def toggle_context_saved
+      toggle_saved(context_story)
+    end
+
+    # The Saved section is a view of the store, so changing the store changes
+    # the list itself; every other section only needs its star back.
+    def saved_changed(story)
+      return load_front_page if @list.local?
+
+      @story_view.refresh_row(@list.index_of(story))
+    end
+
+    def clear_saved
+      @favorites.clear
+      @list.local? ? load_front_page : @story_view.invalidate
+      status('Saved articles cleared')
+    end
+
+    # ---- exporting -----------------------------------------------------------
+
+    # Write the saved stories somewhere the reader picks. Returns the path
+    # written, or nil when there was nothing to write or nowhere to put it.
+    def export_saved(key)
+      stories = @favorites.stories
+      if stories.empty?
+        status('Nothing saved to export')
+        return nil
+      end
+
+      path = ask_where_to_save(Export[key])
+      if path.nil?
+        status('Export cancelled')
+        return nil
+      end
+
+      write_export(path, Export.render(key, stories), stories.size)
+    end
+
+    # Replaceable, so tests can export without anyone clicking a panel.
+    def save_panel_runner
+      @save_panel_runner ||= lambda do |format|
+        panel = Cocoa::NSSavePanel.savePanel
+        panel.setTitle("Export Saved Articles as #{format.label}")
+        panel.setNameFieldStringValue(Export.filename(format.key))
+        panel.setAllowedFileTypes([format.extension])
+        panel.setCanCreateDirectories(true)
+        panel.runModal == Cocoa::NSModalResponseOK ? panel.URL&.path.to_s : nil
+      end
+    end
+
+    attr_writer :save_panel_runner
+
+    def ask_where_to_save(format)
+      path = save_panel_runner.call(format)
+      path.to_s.empty? ? nil : path.to_s
+    end
+
+    def write_export(path, text, count)
+      File.write(path, text)
+      status("Exported #{pluralize(count, 'story', 'stories')} to #{File.basename(path)}")
+      path
+    rescue SystemCallError => e
+      status("Could not write #{File.basename(path)}: #{e.message}")
+      nil
     end
 
     # ---- read state ----------------------------------------------------------
@@ -558,8 +658,10 @@ module HackerNews
         copy_article:  -> { copy_article_link },
         copy_comments: -> { copy_comments_link },
         toggle_read:   -> { toggle_context_read },
+        toggle_saved:  -> { toggle_context_saved },
         share:         -> { share_context },
-        read?:         -> { visited?(context_story) }
+        read?:         -> { visited?(context_story) },
+        saved?:        -> { saved?(context_story) }
       }
     end
 
@@ -678,7 +780,9 @@ module HackerNews
                                          favicons_changed:  -> { apply_favicons },
                                          history_changed:   ->(on) { set_remember_read(on) },
                                          clear_history:     -> { mark_all_unread },
-                                         read_count:        -> { visited_count }
+                                         read_count:        -> { visited_count },
+                                         clear_saved:       -> { clear_saved },
+                                         saved_count:       -> { saved_count }
                                        })
     end
 
@@ -713,6 +817,7 @@ module HackerNews
       @story_view = StoryListView.new(
         list: @list, typography: @typography,
         favicons: @settings.show_favicons? ? @favicons : nil,
+        favorites: @favorites,
         context: context_commands,
         width: MainWindow::SIDEBAR_MIN, height: MainWindow::HEIGHT,
         on_select:   ->(row) { show_story(@list[row]) },
@@ -726,28 +831,16 @@ module HackerNews
     end
 
     def build_window
-      @spinner = Cocoa::NSProgressIndicator.alloc.initWithFrame([0, 0, 18, 18])
-      @spinner.setStyle(Cocoa::NSProgressIndicatorStyleSpinning)
-      @spinner.setControlSize(2)
-      @spinner.setDisplayedWhenStopped(false)
-
       @section_control = build_section_control
 
       toolbar = Toolbar.new(identifier: TOOLBAR_ID, items: [
-                              Toolbar::Button.new(identifier: RELOAD_ITEM, label: 'Reload',
-                                                  symbol: 'arrow.clockwise',
-                                                  action: -> { load_front_page }),
                               Toolbar::Custom.new(identifier: SECTION_ITEM,
                                                   view: @section_control),
                               Toolbar::SPACE,
-                              Toolbar::Custom.new(identifier: SPINNER_ITEM, view: @spinner),
                               Toolbar::Search.new(identifier: SEARCH_ITEM, label: 'Search',
                                                   placeholder: SEARCH_PLACEHOLDER,
                                                   autosave: SEARCH_AUTOSAVE,
                                                   on_search: ->(text) { search_typed(text) }),
-                              Toolbar::Button.new(identifier: OPEN_ITEM, label: 'Open Link',
-                                                  symbol: 'safari',
-                                                  action: -> { open_selected_link }),
                               Toolbar::Button.new(identifier: HN_ITEM, label: 'Discussion',
                                                   symbol: 'bubble.left.and.bubble.right',
                                                   action: -> { open_selected_discussion }),
@@ -810,14 +903,11 @@ module HackerNews
         @story_view.hide_empty
         @story_view.reload
       when :loading
-        @spinner.startAnimation(nil)
         status(loading_status)
       when :error
-        @spinner.stopAnimation(nil)
         @story_view.show_empty("Could not load stories — #{payload}") if @list.empty?
         status("Could not load stories: #{payload}")
       when :loaded
-        @spinner.stopAnimation(nil)
         @story_view.note_rows_changed
         show_empty_state
         status(story_status)
@@ -831,6 +921,9 @@ module HackerNews
       if @list.searching?
         @story_view.show_empty("No stories match “#{@list.query.text}”",
                                symbol: StoryListView::NO_RESULTS_SYMBOL)
+      elsif @list.local?
+        @story_view.show_empty('Nothing saved yet — ⌘D saves the story you are reading',
+                               symbol: StoryListView::NO_SAVED_SYMBOL)
       else
         @story_view.show_empty('Nothing to read here yet',
                                symbol: StoryListView::NO_STORIES_SYMBOL)
@@ -838,6 +931,7 @@ module HackerNews
     end
 
     def loading_status
+      return 'Opening saved articles…' if @list.local?
       return 'Loading more stories…' unless @list.empty?
       return "Searching for “#{@list.query.text}”…" if @list.searching?
 
@@ -846,6 +940,11 @@ module HackerNews
 
     def story_status
       return empty_status if @list.empty?
+
+      if @list.local?
+        found = @list.searching? ? " matching “#{@list.query.text}”" : ''
+        return "#{pluralize(@list.size, 'saved story', 'saved stories')}#{found}"
+      end
 
       count = if @list.searching?
                 found = "#{pluralize(@list.size, 'result')} for “#{@list.query.text}”"
@@ -857,6 +956,7 @@ module HackerNews
     end
 
     def empty_status
+      return 'Nothing saved yet' if @list.local? && !@list.searching?
       return 'No stories' unless @list.searching?
 
       found = "Nothing found for “#{@list.query.text}”"
@@ -892,9 +992,11 @@ module HackerNews
       "#{count} #{count == 1 ? singular : plural}"
     end
 
+    # Said under the story list rather than in the title bar, where it used
+    # to be truncated by the controls beside it.
     def status(text)
       @status = text
-      @main_window&.subtitle = text
+      @story_view&.status = text
     end
   end
 end

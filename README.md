@@ -61,6 +61,33 @@ allows one typo in a four-letter word, so a search for "rust" otherwise comes
 back full of "trust" and "restart". Ranking by relevance keeps both, which is
 what still finds Kubernetes when you type "kubernets".
 
+**Saving.** ⌘D keeps the story you are reading, and a **Saved** section sits
+beside Hacker News's own, on ⌘7. It is answered from disk rather than from
+the API — nothing is requested, there is no second page, and the search field
+filters what is already in hand. A star marks saved stories everywhere else;
+in Saved itself every row carries one, so instead each says when it was
+saved.
+
+![the saved section](docs/hackernews_saved.png)
+
+What is kept is the whole story, not its identifier. The API will not
+necessarily still answer for a story months later, and an export has to stand
+on its own.
+
+**Exporting.** File → Export Saved Articles writes the lot in any of four
+formats:
+
+| | |
+|---|---|
+| **Markdown** | A readable list — title, link, meta, discussion — to paste into a notebook |
+| **JSON** | Every field kept, for another tool to read |
+| **OPML** | An outline of links, which is what OPML is for once you look past feeds |
+| **Browser bookmarks** | The Netscape format Safari, Chrome and Firefox all import |
+
+The formatters are plain Ruby: stories in, a String out. No panels, no file
+system, so each format is checked without any of that, down to the escaping
+of a title with `&`, `<` and `"` in it.
+
 **Paging.** The list pages as you scroll. The front page is exactly thirty
 stories, so anything past it continues with the last week's stories ranked by
 points — roughly what Hacker News's own "More" link amounts to. Consecutive
@@ -111,11 +138,32 @@ so the two can never both be on screen.
 
 **Settings** (⌘,) covers comment expansion, text size, which feed continues
 past the front page, how many stories load at a time, where links open, site
-icons, and whether reading history is kept at all. Preferences are
+icons, whether reading history is kept at all, and clearing the saved list. Preferences are
 *registered* rather than written, so a fresh install gets sensible values
 without anything being persisted until something is actually changed. Turning
 history off forgets what is on disk but keeps the marks made in the current
 session, so the list does not visibly reset under the reader.
+
+## The window chrome
+
+The title bar carries controls and nothing else. In a unified toolbar the
+title is not above the controls but beside them, competing for the same row,
+and it was the widest thing in it — the app name and its status line together
+cost about 300pt against 333pt for all seven sections. The app name is in the
+menu bar and under the Dock icon already; the window is still titled, for the
+Window menu and Mission Control, just not drawn.
+
+The status line moved under the story list, where Finder, Mail and Xcode keep
+theirs. It reads in full at the 720pt minimum window, which it did not when it
+shared a row with the toolbar — a search would truncate it to
+"30 results for “rust” · scroll f…".
+
+Three buttons went with it. Reload is ⌘R and a File menu entry, and the list
+refetches on a timer; Open Link is a double-click, ⌘O and a right-click item;
+the progress spinner said what the status line says. What is left is the
+section switcher, the search field, Discussion and Share — and the toolbar is
+customisable, so that is a starting arrangement rather than a decision made
+for you.
 
 ## Networking
 
@@ -151,8 +199,8 @@ cocoa/                the bridge it is built on, self-contained
 ```
 
 The models carry no AppKit at all. `StoryList`, `CommentThread`, `Query`,
-`Section` and `ReadingHistory` are plain Ruby, tested with no window, no run
-loop and no network. The views own their tables and their own Objective-C
+`Section`, `ReadingHistory`, `Favorites` and `Export` are plain Ruby, tested
+with no window, no run loop and no network. The views own their tables and their own Objective-C
 delegate class — looked up per instance, because Objective-C registers classes
 globally by name and a class defined per instance would have its methods
 replaced by the next one, and then answer for the wrong owner.
@@ -185,8 +233,8 @@ rake app_test      # the reader
 rake bridge_test   # the bridge
 ```
 
-395 tests, 1,566 assertions, on Ruby 3.3 (`x86_64` under Rosetta) and on macOS's
-own Ruby 2.6 (native `arm64e`) alike. The API is stubbed, so they are fast and
+454 tests, 1,840 assertions, on Ruby 3.3 (`x86_64` under Rosetta) and on
+macOS's own Ruby 2.6 (native `arm64e`) alike. The API is stubbed, so they are fast and
 deterministic; `HN_LIVE=1` additionally runs the real asynchronous path.
 
 The two suites run as separate processes, because each drives the one shared
