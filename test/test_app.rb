@@ -3476,6 +3476,19 @@ class TestHackerNewsToolbarLayout < Minitest::Test
     assert_operator content.frame.height, :>, 0
   end
 
+  # A CGColor resolves a dynamic colour once and keeps that value, which left
+  # the hairline black against a dark window. The box holds the NSColor.
+  def test_the_hairline_still_answers_to_the_appearance
+    separator = app.story_view.status_bar.instance_variable_get(:@separator)
+
+    assert_equal 4, separator.boxType, 'a separator box would resize itself'
+    assert_equal 0.0, separator.borderWidth
+    assert_equal 1.0, separator.frame.height, 'a hairline is one point'
+    # The dynamic colour itself, not a snapshot of what it resolved to.
+    assert_equal Cocoa::NSColor.separatorColor.description.to_s,
+                 separator.fillColor.description.to_s
+  end
+
   # A long status must lose its end, not its beginning -- the count is what
   # the eye goes to first.
   def test_a_long_status_truncates_at_the_tail

@@ -53,14 +53,19 @@ module HackerNews
     # A hairline, so the bar reads as its own strip rather than as a gap the
     # list happens to stop short of.
     #
-    # A layer-backed view rather than an NSBox: a separator box has a minimum
-    # thickness of its own and re-centres itself inside whatever frame it is
-    # given, which puts the line somewhere other than the edge.
+    # A custom-type box filled with the colour, not a separator-type box and
+    # not a layer background. A separator box has a minimum thickness of its
+    # own and re-centres itself inside whatever frame it is given; a layer
+    # takes a CGColor, which resolves `separatorColor` once and then keeps
+    # that value -- leaving a black hairline invisible against a dark
+    # window. A box holds the NSColor itself, so it still answers to the
+    # appearance.
     def build_separator(width)
-      @separator = Cocoa::NSView.alloc.initWithFrame([0, HEIGHT - 1, width, 1])
+      @separator = Cocoa::NSBox.alloc.initWithFrame([0, HEIGHT - 1, width, 1])
+      @separator.setBoxType(4) # NSBoxCustom
+      @separator.setBorderWidth(0)
+      @separator.setFillColor(Cocoa::NSColor.separatorColor)
       @separator.setAutoresizingMask(Cocoa::NSViewWidthSizable)
-      @separator.setWantsLayer(true)
-      @separator.layer.setBackgroundColor(Cocoa::NSColor.separatorColor.CGColor)
       @bar.addSubview(@separator)
     end
 
