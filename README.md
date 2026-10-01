@@ -258,7 +258,7 @@ rake app_test      # the reader
 rake bridge_test   # the bridge
 ```
 
-475 tests, 1,894 assertions, on Ruby 3.3 (`x86_64` under Rosetta) and on
+483 tests, 1,914 assertions, on Ruby 3.3 (`x86_64` under Rosetta) and on
 macOS's own Ruby 2.6 (native `arm64e`) alike — and on five different random
 orderings, because a suite that only passes in one order is not passing.
 

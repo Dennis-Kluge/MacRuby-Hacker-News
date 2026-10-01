@@ -398,3 +398,84 @@ class TestHackerNewsArticleColumn < Minitest::Test
     assert_nil pane.failure
   end
 end
+
+# The page itself, which the reader window and the article column share.
+class TestWebView < Minitest::Test
+  def build(&block)
+    HackerNews::WebView.new(width: 400, height: 300, &block)
+  end
+
+  def test_it_wraps_a_real_web_view
+    web = build
+    assert_equal 'WKWebView', web.view.objc_class_name.sub(/\ANSKVONotifying_/, '')
+    refute_nil web.view.navigationDelegate
+  end
+
+  def test_an_unparseable_url_is_not_loaded
+    web = build
+    assert_nil web.load('http://exa mple.com/ bad')
+    assert_nil web.requested
+  end
+
+  def test_loading_remembers_what_was_asked_for
+    web = build
+    assert_equal 'about:blank', web.load('about:blank')
+    assert_equal 'about:blank', web.requested
+  end
+
+  def test_blanking_forgets_it
+    web = build
+    web.load('about:blank')
+    web.blank
+    assert_nil web.requested
+  end
+
+  # Starting one load cancels the last; that is not a failure worth telling
+  # anybody about, and the reader used to put it in its subtitle.
+  def test_a_cancelled_load_is_not_a_failure
+    seen = []
+    web = build { |event, message| seen << [event, message] }
+
+    web.navigation_failed('The operation was cancelled.')
+    assert_empty seen
+    assert_nil web.failure
+
+    assert HackerNews::WebView.cancelled?('Error: canceled')
+    refute HackerNews::WebView.cancelled?('The network connection was lost.')
+  end
+
+  def test_a_real_failure_is_reported_once
+    seen = []
+    web = build { |event, message| seen << [event, message] }
+    web.navigation_failed('The network connection was lost.')
+
+    assert_equal [[:failed, 'The network connection was lost.']], seen
+    assert_equal 'The network connection was lost.', web.failure
+  end
+
+  def test_finishing_clears_the_failure
+    web = build
+    web.navigation_failed('The network connection was lost.')
+    refute_nil web.failure
+
+    web.navigation_finished
+    assert_nil web.failure
+  end
+
+  # One Objective-C delegate class serves every instance, so each has to find
+  # its own owner -- a class defined per instance would have its methods
+  # replaced by the next one and then answer for the wrong view.
+  def test_two_of_them_do_not_answer_for_each_other
+    first  = []
+    second = []
+    one = build { |event, _m| first << event }
+    two = build { |event, _m| second << event }
+
+    refute_equal one.view.navigationDelegate.objc_address,
+                 two.view.navigationDelegate.objc_address
+
+    HackerNews::WebView.owner_of(two.view.navigationDelegate).navigation_started
+    assert_empty first
+    assert_equal [:started], second
+  end
+end

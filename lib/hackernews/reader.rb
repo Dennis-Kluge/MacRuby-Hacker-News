@@ -1,9 +1,11 @@
 # frozen_string_literal: true
 
 module HackerNews
-  # An article window backed by WKWebView, so a story can be read without
-  # leaving the app. One window is reused for every article; it keeps its own
-  # back/forward history.
+  # An article window, so a story can be read without leaving the app. One
+  # window is reused for every article; it keeps its own back/forward history.
+  #
+  # The page itself is a WebView, which the article column uses too. What is
+  # left here is the window, its toolbar, and what to call the thing.
   class Reader
     WIDTH  = 1000
     HEIGHT = 780
@@ -25,7 +27,11 @@ module HackerNews
       build_toolbar
     end
 
-    attr_reader :window, :web_view
+    attr_reader :window
+
+    def web_view
+      @web.view
+    end
 
     # Load a URL, bringing the window forward.
     def open(url_string, title: nil)
@@ -39,36 +45,33 @@ module HackerNews
       @window.setTitle(display_title(''))
       @window.setSubtitle(url.host.to_s)
 
-      @web_view.loadRequest(Cocoa::NSURLRequest.requestWithURL(url))
+      @web.load(url_string)
       @window.makeKeyAndOrderFront(nil)
       Cocoa::NSApplication.sharedApplication.activateIgnoringOtherApps(true)
       true
     end
 
     def current_url
-      @web_view.URL&.absoluteString&.to_s || @current_url
+      @web.url || @current_url
     end
 
     def loading?
-      @web_view.isLoading
+      @web.loading?
     end
 
-    # Called by the navigation delegate as the page moves along.
-    def navigation_started
-      @spinner&.startAnimation(nil)
-      update_navigation_items
-    end
-
-    def navigation_finished
-      @spinner&.stopAnimation(nil)
-      @window.setTitle(display_title(@web_view.title.to_s))
-      @window.setSubtitle(@web_view.URL&.host.to_s)
-      update_navigation_items
-    end
-
-    def navigation_failed(message)
-      @spinner&.stopAnimation(nil)
-      @window.setSubtitle("Could not load — #{message}")
+    # What the page is doing, as the shared web view reports it.
+    def page_changed(event, message)
+      case event
+      when :started
+        @spinner&.startAnimation(nil)
+      when :finished
+        @spinner&.stopAnimation(nil)
+        @window.setTitle(display_title(@web.title))
+        @window.setSubtitle(@web.view.URL&.host.to_s)
+      when :failed
+        @spinner&.stopAnimation(nil)
+        @window.setSubtitle("Could not load — #{message}")
+      end
       update_navigation_items
     end
 
@@ -80,8 +83,8 @@ module HackerNews
     end
 
     def update_navigation_items
-      @items[BACK_ITEM]&.setEnabled(@web_view.canGoBack)
-      @items[FORWARD_ITEM]&.setEnabled(@web_view.canGoForward)
+      @items[BACK_ITEM]&.setEnabled(@web.can_go_back?)
+      @items[FORWARD_ITEM]&.setEnabled(@web.can_go_forward?)
     end
 
     def open_externally
@@ -105,39 +108,11 @@ module HackerNews
     end
 
     def build_web_view
-      configuration = Cocoa::WKWebViewConfiguration.alloc.init
       bounds = @window.contentView.bounds
-
-      @web_view = Cocoa::WKWebView.alloc.initWithFrame_configuration(
-        [0, 0, bounds.width, bounds.height], configuration
-      )
-      @web_view.setAutoresizingMask(
-        Cocoa::NSViewWidthSizable | Cocoa::NSViewHeightSizable
-      )
-
-      reader = self
-      delegate_class = Cocoa.define_class(
-        'HNReaderNavigationDelegate', 'NSObject', protocols: %w[WKNavigationDelegate]
-      ) do |c|
-        c.define('webView:didStartProvisionalNavigation:', 'v@:@@') do |_s, _v, _n|
-          reader.navigation_started
-        end
-        c.define('webView:didFinishNavigation:', 'v@:@@') do |_s, _v, _n|
-          reader.navigation_finished
-        end
-        c.define('webView:didFailNavigation:withError:', 'v@:@@@') do |_s, _v, _n, error|
-          reader.navigation_failed(error&.localizedDescription.to_s)
-        end
-        c.define('webView:didFailProvisionalNavigation:withError:', 'v@:@@@') do |_s, _v, _n, error|
-          reader.navigation_failed(error&.localizedDescription.to_s)
-        end
+      @web = WebView.new(width: bounds.width, height: bounds.height) do |event, message|
+        page_changed(event, message)
       end
-
-      # The web view holds its delegate weakly.
-      @navigation_delegate = delegate_class.alloc.init
-      @web_view.setNavigationDelegate(@navigation_delegate)
-
-      @window.contentView.addSubview(@web_view)
+      @window.contentView.addSubview(@web.view)
     end
 
     def build_toolbar
@@ -146,9 +121,9 @@ module HackerNews
       @spinner.setControlSize(2)
       @spinner.setDisplayedWhenStopped(false)
 
-      @back_target    = Cocoa.action { |_s| @web_view.goBack }
-      @forward_target = Cocoa.action { |_s| @web_view.goForward }
-      @reload_target  = Cocoa.action { |_s| loading? ? @web_view.stopLoading : @web_view.reload }
+      @back_target    = Cocoa.action { |_s| @web.back }
+      @forward_target = Cocoa.action { |_s| @web.forward }
+      @reload_target  = Cocoa.action { |_s| @web.reload }
       @external_target = Cocoa.action { |_s| open_externally }
 
       reader = self
