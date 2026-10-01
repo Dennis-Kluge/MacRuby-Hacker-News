@@ -465,9 +465,19 @@ class TestHackerNewsChrome < Minitest::Test
 
   # The comments are the point of the window; they do not give way to the
   # columns on either side of them.
+  # Stories, then the page they link to, then the comments.
   def test_the_comments_column_cannot_be_squeezed_away
-    content = window.contentViewController.splitViewItems.objectAtIndex(1)
+    content = window.contentViewController.splitViewItems.objectAtIndex(2)
     assert_equal HackerNews::MainWindow::CONTENT_MIN, content.minimumThickness
+  end
+
+  def test_the_columns_are_in_reading_order
+    items = window.contentViewController.splitViewItems
+    panes = (0...items.count).map { |i| items.objectAtIndex(i).viewController.view.objc_address }
+
+    assert_equal [app.story_view.pane.objc_address,
+                  app.article_pane.pane.objc_address,
+                  app.thread_view.pane.objc_address], panes
   end
 
   def test_the_first_item_is_a_real_sidebar
@@ -1671,6 +1681,16 @@ class TestHackerNewsResizing < Minitest::Test
     app.pump(1.5) { false }
   end
 
+  # Other tests in here drive the window to 800 and 1400 and leave it there,
+  # and how wide the sidebar can get depends on how much window is left after
+  # the comments take their minimum. Each test starts from a known width.
+  def window_width(width)
+    window = app.main_window.window
+    window.setFrame_display([window.frame.x, window.frame.y, width,
+                             window.frame.height], true)
+    settle
+  end
+
   def story_table
     app.story_view.view
   end
@@ -1684,6 +1704,7 @@ class TestHackerNewsResizing < Minitest::Test
   end
 
   def test_the_story_column_follows_the_sidebar
+    window_width(1280)
     app.main_window.sidebar_width = 560
     settle
     wide = column_width(story_table)
@@ -1703,6 +1724,7 @@ class TestHackerNewsResizing < Minitest::Test
   end
 
   def test_story_rows_are_measured_again_at_the_new_width
+    window_width(1280)
     app.main_window.sidebar_width = 600
     settle
     wide = story_table.rectOfRow(0).height
@@ -1787,6 +1809,7 @@ class TestHackerNewsResizing < Minitest::Test
   # Row views already on screen keep the frame they were given, so a resize has
   # to re-create them or their text stays wrapped to the old width.
   def test_rows_are_rebuilt_at_the_new_width
+    window_width(1280)
     app.main_window.sidebar_width = 600
     settle
     wide = app.story_view.cell(0).objc_address

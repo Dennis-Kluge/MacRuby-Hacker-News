@@ -12,6 +12,7 @@ module HackerNews
     SIDEBAR_MAX     = 620
     SIDEBAR_DEFAULT = 330
     CONTENT_MIN     = 360
+    CONTENT_DEFAULT = 420
     ARTICLE_MIN     = 420
     ARTICLE_DEFAULT = 560
 
@@ -162,23 +163,25 @@ module HackerNews
       @split = Cocoa::NSSplitViewController.alloc.init
       @split.addSplitViewItem(item)
 
+      # The story, then what it links to, then what people said about it --
+      # left to right in the order you read them. The page sits between the
+      # list and the comments rather than beyond them.
+      unless article.nil?
+        @article_controller = controller_for(article)
+        @article_item = Cocoa::NSSplitViewItem.splitViewItemWithViewController(
+          @article_controller
+        )
+        @article_item.setMinimumThickness(ARTICLE_MIN)
+        @article_item.setCanCollapse(true)
+        @split.addSplitViewItem(@article_item)
+      end
+
       content_item = Cocoa::NSSplitViewItem.splitViewItemWithViewController(
         @content_controller
       )
-      # The comments are the point of the window; they do not give way to the
-      # columns on either side of them.
+      # The comments do not give way to the columns beside them.
       content_item.setMinimumThickness(CONTENT_MIN)
       @split.addSplitViewItem(content_item)
-
-      return if article.nil?
-
-      @article_controller = controller_for(article)
-      @article_item = Cocoa::NSSplitViewItem.splitViewItemWithViewController(
-        @article_controller
-      )
-      @article_item.setMinimumThickness(ARTICLE_MIN)
-      @article_item.setCanCollapse(true)
-      @split.addSplitViewItem(@article_item)
     end
 
     # Assigning the view up front keeps NSViewController from looking for a nib.
@@ -227,7 +230,7 @@ module HackerNews
     def resize_for_article(showing)
       return unless showing
 
-      wanted = SIDEBAR_DEFAULT + ARTICLE_MIN + ARTICLE_DEFAULT
+      wanted = SIDEBAR_DEFAULT + ARTICLE_DEFAULT + CONTENT_DEFAULT
       return if @window.nil? || @window.frame.width >= wanted
 
       frame = @window.frame
