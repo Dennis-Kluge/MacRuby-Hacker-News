@@ -141,6 +141,9 @@ module HackerNews
       command(menu, 'Mark All Stories Unread', :mark_all_unread)
       separator(menu)
       # NSSplitViewController implements toggleSidebar:, reached via the chain.
+      command(menu, 'Show Linked Page', :toggle_article, key: '3',
+                    modifiers: CMD | CONTROL)
+      separator(menu)
       # NSWindow implements this; it opens the toolbar's own palette.
       standard(menu, 'Customise Toolbar…', 'runToolbarCustomizationPalette:')
       separator(menu)

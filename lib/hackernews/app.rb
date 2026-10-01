@@ -18,6 +18,9 @@ module HackerNews
     SHARE_ITEM   = 'hn.share'
     SEARCH_ITEM  = 'hn.search'
 
+    # Long enough that moving through the list does not fetch what it passes.
+    ARTICLE_DELAY = 0.45
+
     SEARCH_PLACEHOLDER = 'Search Hacker News'
     SEARCH_AUTOSAVE    = 'HNRecentSearches'
 
@@ -90,7 +93,8 @@ module HackerNews
     attr_reader :favicons, :favorites
 
     attr_reader :settings, :list, :history, :typography,
-                :story_view, :thread_view, :main_window, :toolbar, :menu_bar
+                :story_view, :thread_view, :article_pane,
+                :main_window, :toolbar, :menu_bar
 
     # The story whose comments are showing.
     attr_reader :story
@@ -133,6 +137,7 @@ module HackerNews
         collapse_all:     -> { thread_view.collapse_all },
         mark_all_unread:  -> { mark_all_unread },
         show_window:      -> { show_main_window },
+        toggle_article:   -> { toggle_article },
         find:             -> { focus_search },
         clear_search:     -> { clear_search },
         share:            -> { share_selected },
@@ -314,6 +319,8 @@ module HackerNews
       @story_view.deselect
       @story = nil
       @thread_view.present(CommentThread.new, message: ThreadView::NOTHING_SELECTED)
+      article_debounce.cancel
+      @article_pane&.clear
     end
 
     def load_next_page
@@ -345,6 +352,7 @@ module HackerNews
       return if story.nil? || (@story && @story[:id] == story[:id])
 
       @story = story
+      article_for(story)
       mark_visited(story)
       @thread_view.present(CommentThread.new, message: 'Loading comments…')
       @loading_comments = true
@@ -422,6 +430,55 @@ module HackerNews
       @story_view.invalidate
       @thread_view.invalidate
       apply_expansion unless @thread_view.thread.empty?
+    end
+
+    # ---- the article beside the comments -------------------------------------
+
+    def showing_article?
+      @main_window.article_visible?
+    end
+
+    # Moving down the list with the arrow keys would otherwise ask every site
+    # in turn for a page nobody waited to see. The pause before loading is
+    # what makes the column a reader rather than a crawler.
+    def article_debounce
+      @article_debounce ||= Debounce.new(delay: article_delay) do |story|
+        load_article(story)
+      end
+    end
+
+    def article_delay
+      @article_delay ||= ARTICLE_DELAY
+    end
+
+    def article_delay=(seconds)
+      @article_delay     = seconds
+      @article_debounce  = nil
+    end
+
+    # Called as the selection changes; the request itself waits.
+    def article_for(story)
+      return unless showing_article?
+
+      story.nil? ? @article_pane.clear : article_debounce.schedule(story)
+    end
+
+    def load_article(story)
+      return if story.nil? || !showing_article?
+
+      @article_pane.show(story, story[:url].to_s)
+    end
+
+    def toggle_article
+      self.showing_article = !showing_article?
+    end
+
+    def showing_article=(showing)
+      @settings.show_article = showing
+      @main_window.article_visible = showing
+      showing ? article_for(@story) : article_debounce.cancel
+      status(showing ? 'Showing the linked page' : 'Hiding the linked page')
+      showing
     end
 
     # ---- saved articles ------------------------------------------------------
@@ -778,6 +835,7 @@ module HackerNews
                                          section_changed:   -> { show_section(@settings.section.key) },
                                          refresh_changed:   -> { apply_refresh_interval },
                                          favicons_changed:  -> { apply_favicons },
+                                         article_changed:   ->(on) { self.showing_article = on },
                                          history_changed:   ->(on) { set_remember_read(on) },
                                          clear_history:     -> { mark_all_unread },
                                          read_count:        -> { visited_count },
@@ -828,6 +886,10 @@ module HackerNews
       @thread_view = ThreadView.new(
         typography: @typography, width: 640, height: MainWindow::HEIGHT
       )
+
+      @article_pane = ArticlePane.new(
+        width: MainWindow::ARTICLE_DEFAULT, height: MainWindow::HEIGHT
+      )
     end
 
     def build_window
@@ -858,8 +920,10 @@ module HackerNews
         sidebar: @story_view.pane,
         content: @thread_view.pane,
         toolbar: toolbar,
-        accessory: @search_bar
+        accessory: @search_bar,
+        article: @article_pane.pane
       )
+      @main_window.article_visible = @settings.show_article?
     end
 
     # Hacker News's own sections, in its own order.

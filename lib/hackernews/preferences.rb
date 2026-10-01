@@ -53,6 +53,7 @@ module HackerNews
         Settings.index_of_link_target(@settings.open_links_in)
       )
       @favicons_checkbox.setState(@settings.show_favicons? ? 1 : 0)
+      @article_checkbox.setState(@settings.show_article? ? 1 : 0)
       @remember_checkbox.setState(@settings.remember_read? ? 1 : 0)
 
       count = act(:read_count).to_i
@@ -108,6 +109,11 @@ module HackerNews
       @page_size_popup = popup_row('Load at a time:', Settings.page_size_labels) do |popup|
         @settings.page_size = Settings::PAGE_SIZES[popup.indexOfSelectedItem]
         act(:feed_changed)
+      end
+
+      @article_checkbox = checkbox_row('Linked page:',
+                                       'Show it beside the comments') do |box|
+        act(:article_changed, box.state == 1)
       end
 
       section('Links')

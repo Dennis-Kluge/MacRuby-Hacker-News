@@ -459,7 +459,15 @@ class TestHackerNewsChrome < Minitest::Test
   def test_the_window_uses_a_split_view_controller
     controller = window.contentViewController
     assert_equal 'NSSplitViewController', controller.objc_class_name
-    assert_equal 2, controller.splitViewItems.count
+    # Stories, their comments, and the page a story links to.
+    assert_equal 3, controller.splitViewItems.count
+  end
+
+  # The comments are the point of the window; they do not give way to the
+  # columns on either side of them.
+  def test_the_comments_column_cannot_be_squeezed_away
+    content = window.contentViewController.splitViewItems.objectAtIndex(1)
+    assert_equal HackerNews::MainWindow::CONTENT_MIN, content.minimumThickness
   end
 
   def test_the_first_item_is_a_real_sidebar
@@ -1637,6 +1645,10 @@ class TestHackerNewsResizing < Minitest::Test
 
   def setup
     app.settings.reset
+    # Two columns: these measure how the sidebar and the comments share the
+    # window, and a third column with a minimum of its own only narrows the
+    # range they can be driven over.
+    app.showing_article = false
     stub.error = nil
     stub.pages = nil
     stub.stories = [{ id: '1', title: LONG_TITLE, author: 'a', points: 1,
@@ -3505,5 +3517,193 @@ class TestHackerNewsToolbarLayout < Minitest::Test
 
     refute_equal before, bar.container.frame.height, 'the pane should have resized'
     assert_match(/story/, bar.text)
+  end
+end
+
+# The third column: the page a story links to, beside its comments.
+class TestHackerNewsArticleColumn < Minitest::Test
+  LINKED = { id: '1', title: 'Linked story', author: 'a', points: 9, comments: 2,
+             url: 'https://example.com/article', domain: 'example.com' }.freeze
+  TEXT_POST = { id: '2', title: 'Ask HN: something', author: 'b', points: 3,
+                comments: 1, url: nil, domain: nil }.freeze
+
+  def self.app
+    @app ||= begin
+      @stub = HackerNews::StubAPI.new
+      HackerNews::App.new(api: @stub,
+                          favorites: HackerNews::Favorites.new(
+                            store: HackerNews::MemoryText.new
+                          ))
+    end
+  end
+
+  def self.stub
+    app
+    @stub
+  end
+
+  def app
+    self.class.app
+  end
+
+  def stub
+    self.class.stub
+  end
+
+  def pane
+    app.article_pane
+  end
+
+  def setup
+    app.settings.reset
+    stub.error = nil
+    stub.pages = nil
+    stub.stories = [LINKED.dup, TEXT_POST.dup]
+    stub.tree = { 'children' => [] }
+    # No waiting about: these check what is asked for, not what comes back.
+    app.article_delay = 0
+    app.showing_article = true
+    app.instance_variable_set(:@story, nil)
+    # The pane outlives each test, so what the last one asked for has to go.
+    app.article_debounce.cancel
+    app.article_pane.clear
+    app.load_front_page
+  end
+
+  def teardown
+    app.showing_article = true
+    app.settings.reset
+  end
+
+  # ---- the column --------------------------------------------------------
+
+  def test_it_is_a_third_split_item
+    items = app.main_window.window.contentViewController.splitViewItems
+    assert_equal 3, items.count
+    assert app.main_window.article_column?
+    assert app.main_window.article_visible?
+  end
+
+  def test_it_can_be_put_away_and_brought_back
+    app.toggle_article
+    refute app.showing_article?
+    refute app.main_window.article_visible?
+
+    app.toggle_article
+    assert app.showing_article?
+    assert app.main_window.article_visible?
+  end
+
+  def test_whether_it_is_showing_is_remembered
+    app.showing_article = false
+    refute app.settings.show_article?
+
+    app.showing_article = true
+    assert app.settings.show_article?
+  end
+
+  def test_the_view_menu_toggles_it
+    item = app.menu_bar.item_titled('View', 'Show Linked Page')
+    refute_nil item
+    assert_equal '3', item.keyEquivalent.to_s
+  end
+
+  # Three columns need room for three; the one in the middle must not be
+  # squeezed away between the minimums either side of it.
+  def test_the_window_floor_rises_with_the_column
+    app.showing_article = false
+    assert_equal HackerNews::MainWindow::MIN_SIZE[0],
+                 app.main_window.window.minSize.width
+
+    app.showing_article = true
+    assert_equal HackerNews::MainWindow::MIN_SIZE_WIDE[0],
+                 app.main_window.window.minSize.width
+    assert_operator app.main_window.window.frame.width, :>=,
+                    HackerNews::MainWindow::MIN_SIZE_WIDE[0]
+  end
+
+  # ---- what it shows -----------------------------------------------------
+
+  def test_nothing_selected_means_nothing_to_show
+    assert pane.showing_placeholder?
+    assert_match(/Select a story/, pane.placeholder_text)
+  end
+
+  def test_selecting_a_story_asks_for_its_link
+    app.select_story(0)
+
+    assert_equal 'https://example.com/article', pane.requested
+    refute pane.showing_placeholder?
+  end
+
+  # A story that is its own discussion has no page to show, and says so
+  # rather than loading the thread a second time.
+  def test_a_text_post_has_no_page_to_show
+    app.select_story(1)
+
+    assert_nil pane.requested
+    assert pane.showing_placeholder?
+    assert_match(/its own discussion/, pane.placeholder_text)
+  end
+
+  def test_selecting_the_same_story_again_does_not_reload
+    app.select_story(0)
+    first = pane.requested
+    app.select_story(0)
+
+    assert_equal first, pane.requested
+  end
+
+  def test_clearing_the_selection_clears_the_column
+    app.select_story(0)
+    refute pane.showing_placeholder?
+
+    app.search('something that finds nothing')
+    assert pane.showing_placeholder?
+    assert_nil pane.requested
+  ensure
+    app.search('')
+  end
+
+  # ---- not a crawler -----------------------------------------------------
+
+  # Moving down the list with the arrow keys would otherwise ask every site
+  # in turn for a page nobody waited to see.
+  def test_the_request_waits_for_the_selection_to_settle
+    app.article_delay = 5.0
+    app.select_story(0)
+
+    assert_nil pane.requested, 'it should not have asked yet'
+    assert app.article_debounce.pending?
+  ensure
+    app.article_delay = 0
+  end
+
+  def test_nothing_is_fetched_while_the_column_is_hidden
+    app.showing_article = false
+    app.select_story(0)
+
+    assert_nil pane.requested
+    refute app.article_debounce.pending?
+  end
+
+  # ---- failures ----------------------------------------------------------
+
+  def test_a_page_that_will_not_load_says_so_where_the_page_would_be
+    app.select_story(0)
+    pane.navigation_failed('The network connection was lost.')
+
+    assert pane.showing_placeholder?
+    assert_match(/Could not load/, pane.placeholder_text)
+    assert_match(/network connection/, pane.failure)
+  end
+
+  # Starting one load cancels the last; that is not a failure worth saying.
+  def test_a_cancelled_load_is_not_a_failure
+    app.select_story(0)
+    pane.navigation_failed('The operation was cancelled.')
+
+    refute pane.showing_placeholder?
+    assert_nil pane.failure
   end
 end

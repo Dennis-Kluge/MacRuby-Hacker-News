@@ -15,6 +15,7 @@ module HackerNews
     PAGE_SIZE_KEY = 'HNStoriesPerPage'
     LINK_TARGET_KEY = 'HNOpenLinksIn'
     FAVICONS_KEY  = 'HNShowFavicons'
+    ARTICLE_KEY   = 'HNShowArticlePane'
 
     # Ordered, because the index is what the popup button reports back.
     EXPANSION_MODES = [
@@ -54,6 +55,7 @@ module HackerNews
     DEFAULT_PAGE_SIZE = 30
     DEFAULT_LINK_TARGET = :app
     DEFAULT_FAVICONS    = true
+    DEFAULT_ARTICLE     = true
 
     def self.register_defaults
       defaults.registerDefaults(
@@ -64,7 +66,8 @@ module HackerNews
         REFRESH_KEY   => DEFAULT_REFRESH,
         PAGE_SIZE_KEY => DEFAULT_PAGE_SIZE,
         LINK_TARGET_KEY => DEFAULT_LINK_TARGET.to_s,
-        FAVICONS_KEY  => DEFAULT_FAVICONS
+        FAVICONS_KEY  => DEFAULT_FAVICONS,
+        ARTICLE_KEY   => DEFAULT_ARTICLE
       )
     end
 
@@ -200,6 +203,14 @@ module HackerNews
       self.class.defaults.boolForKey(FAVICONS_KEY)
     end
 
+    def show_article?
+      self.class.defaults.boolForKey(ARTICLE_KEY)
+    end
+
+    def show_article=(flag)
+      self.class.defaults.setBool_forKey(flag ? true : false, ARTICLE_KEY)
+    end
+
     def show_favicons=(flag)
       self.class.defaults.setBool_forKey(flag ? true : false, FAVICONS_KEY)
     end
@@ -215,7 +226,7 @@ module HackerNews
     # Used by tests and by the "restore defaults" path.
     def reset
       [EXPANSION_KEY, REMEMBER_KEY, TEXT_SIZE_KEY, SECTION_KEY, REFRESH_KEY,
-       PAGE_SIZE_KEY, LINK_TARGET_KEY, FAVICONS_KEY].each do |key|
+       PAGE_SIZE_KEY, LINK_TARGET_KEY, FAVICONS_KEY, ARTICLE_KEY].each do |key|
         self.class.defaults.removeObjectForKey(key)
       end
       self.class.register_defaults
