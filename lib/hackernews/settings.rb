@@ -57,8 +57,10 @@ module HackerNews
     DEFAULT_FAVICONS    = true
     DEFAULT_ARTICLE     = false
 
-    def self.register_defaults
-      defaults.registerDefaults(
+    # +store+ so a test can be given preferences of its own rather than
+    # writing into the ones the reader is actually using.
+    def self.register_defaults(store = defaults)
+      store.registerDefaults(
         EXPANSION_KEY => DEFAULT_EXPANSION.to_s,
         REMEMBER_KEY  => DEFAULT_REMEMBER,
         TEXT_SIZE_KEY => DEFAULT_TEXT_SIZE.to_s,
@@ -73,6 +75,15 @@ module HackerNews
 
     # Look up a symbol setting, falling back when the stored value is stale or
     # hand-edited.
+    # The store this instance reads and writes. Injected so a test can be
+    # given preferences of its own: everything here otherwise lands in the
+    # domain the running reader uses, and a test run would change it.
+    def initialize(defaults = self.class.defaults)
+      @defaults = defaults
+    end
+
+    attr_reader :defaults
+
     def self.symbol_from(table, stored, fallback)
       candidate = stored.to_s.to_sym
       table.map(&:first).include?(candidate) ? candidate : fallback
@@ -141,22 +152,22 @@ module HackerNews
 
     def expansion
       self.class.symbol_from(EXPANSION_MODES,
-                             self.class.defaults.stringForKey(EXPANSION_KEY),
+                             @defaults.stringForKey(EXPANSION_KEY),
                              DEFAULT_EXPANSION)
     end
 
     def expansion=(mode)
-      self.class.defaults.setObject_forKey(mode.to_s, EXPANSION_KEY)
+      @defaults.setObject_forKey(mode.to_s, EXPANSION_KEY)
     end
 
     def text_size
       self.class.symbol_from(TEXT_SIZES,
-                             self.class.defaults.stringForKey(TEXT_SIZE_KEY),
+                             @defaults.stringForKey(TEXT_SIZE_KEY),
                              DEFAULT_TEXT_SIZE)
     end
 
     def text_size=(size)
-      self.class.defaults.setObject_forKey(size.to_s, TEXT_SIZE_KEY)
+      @defaults.setObject_forKey(size.to_s, TEXT_SIZE_KEY)
     end
 
     def font_sizes
@@ -164,72 +175,72 @@ module HackerNews
     end
 
     def section
-      Section[self.class.defaults.stringForKey(SECTION_KEY)]
+      Section[@defaults.stringForKey(SECTION_KEY)]
     end
 
     def section=(key)
-      self.class.defaults.setObject_forKey(key.to_s, SECTION_KEY)
+      @defaults.setObject_forKey(key.to_s, SECTION_KEY)
     end
 
     def refresh_interval
-      stored = self.class.defaults.integerForKey(REFRESH_KEY)
+      stored = @defaults.integerForKey(REFRESH_KEY)
       REFRESH_INTERVALS.map(&:first).include?(stored) ? stored : DEFAULT_REFRESH
     end
 
     def refresh_interval=(seconds)
-      self.class.defaults.setInteger_forKey(seconds, REFRESH_KEY)
+      @defaults.setInteger_forKey(seconds, REFRESH_KEY)
     end
 
     def page_size
-      stored = self.class.defaults.integerForKey(PAGE_SIZE_KEY)
+      stored = @defaults.integerForKey(PAGE_SIZE_KEY)
       PAGE_SIZES.include?(stored) ? stored : DEFAULT_PAGE_SIZE
     end
 
     def page_size=(size)
-      self.class.defaults.setInteger_forKey(size, PAGE_SIZE_KEY)
+      @defaults.setInteger_forKey(size, PAGE_SIZE_KEY)
     end
 
     def open_links_in
       self.class.symbol_from(LINK_TARGETS,
-                             self.class.defaults.stringForKey(LINK_TARGET_KEY),
+                             @defaults.stringForKey(LINK_TARGET_KEY),
                              DEFAULT_LINK_TARGET)
     end
 
     def open_links_in=(target)
-      self.class.defaults.setObject_forKey(target.to_s, LINK_TARGET_KEY)
+      @defaults.setObject_forKey(target.to_s, LINK_TARGET_KEY)
     end
 
     def show_favicons?
-      self.class.defaults.boolForKey(FAVICONS_KEY)
+      @defaults.boolForKey(FAVICONS_KEY)
     end
 
     def show_article?
-      self.class.defaults.boolForKey(ARTICLE_KEY)
+      @defaults.boolForKey(ARTICLE_KEY)
     end
 
     def show_article=(flag)
-      self.class.defaults.setBool_forKey(flag ? true : false, ARTICLE_KEY)
+      @defaults.setBool_forKey(flag ? true : false, ARTICLE_KEY)
     end
 
     def show_favicons=(flag)
-      self.class.defaults.setBool_forKey(flag ? true : false, FAVICONS_KEY)
+      @defaults.setBool_forKey(flag ? true : false, FAVICONS_KEY)
     end
 
     def remember_read?
-      self.class.defaults.boolForKey(REMEMBER_KEY)
+      @defaults.boolForKey(REMEMBER_KEY)
     end
 
     def remember_read=(flag)
-      self.class.defaults.setBool_forKey(flag ? true : false, REMEMBER_KEY)
+      @defaults.setBool_forKey(flag ? true : false, REMEMBER_KEY)
     end
 
     # Used by tests and by the "restore defaults" path.
     def reset
       [EXPANSION_KEY, REMEMBER_KEY, TEXT_SIZE_KEY, SECTION_KEY, REFRESH_KEY,
        PAGE_SIZE_KEY, LINK_TARGET_KEY, FAVICONS_KEY, ARTICLE_KEY].each do |key|
-        self.class.defaults.removeObjectForKey(key)
+        @defaults.removeObjectForKey(key)
       end
-      self.class.register_defaults
+      self.class.register_defaults(@defaults)
     end
   end
 end

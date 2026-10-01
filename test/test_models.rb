@@ -839,3 +839,85 @@ class TestExport < Minitest::Test
     assert_equal 0, JSON.parse(render(:json, []))['count']
   end
 end
+
+class TestHackerNewsHTML < Minitest::Test
+  H = HackerNews::HTML
+
+  def test_paragraphs_become_blank_lines
+    assert_equal "one\n\ntwo", H.to_text('<p>one</p><p>two</p>').sub(/\A\n+/, '')
+  end
+
+  def test_line_breaks
+    assert_equal "a\nb\nc", H.to_text('a<br>b<br/>c')
+  end
+
+  def test_entities_are_decoded
+    assert_equal "it's < & > \"quoted\"", H.to_text('it&#x27;s &lt; &amp; &gt; &quot;quoted&quot;')
+  end
+
+  def test_numeric_entities
+    assert_equal 'café', H.to_text('caf&#233;')
+    assert_equal 'café', H.to_text('caf&#xe9;')
+  end
+
+  def test_links_keep_their_destination
+    assert_equal 'see this (https://example.com)',
+                 H.to_text('see <a href="https://example.com">this</a>')
+  end
+
+  def test_a_bare_link_is_not_doubled
+    assert_equal 'https://example.com',
+                 H.to_text('<a href="https://example.com">https://example.com...</a>')
+  end
+
+  def test_tags_are_stripped
+    assert_equal 'bold and italic', H.to_text('<b>bold</b> and <i>italic</i>')
+  end
+
+  def test_relative_time
+    now = Time.now
+    assert_equal 'just now',    H.relative_time((now - 10).iso8601, now)
+    assert_equal '5 minutes ago', H.relative_time((now - 300).iso8601, now)
+    assert_equal '1 hour ago',  H.relative_time((now - 3600).iso8601, now)
+    assert_equal '2 days ago',  H.relative_time((now - 172_800).iso8601, now)
+  end
+
+  def test_rich_extraction_records_link_ranges
+    rich = H.to_rich('see <a href="https://example.com">this link</a> now')
+    assert_equal 'see this link now', rich[:text]
+    assert_equal 1, rich[:links].size
+    assert_equal 'https://example.com', rich[:links].first[:url]
+    assert_equal 'this link', H.utf16_slice(rich[:text], *rich[:links].first[:range])
+  end
+
+  # Hacker News escapes href attributes, so an undecoded href would not resolve.
+  def test_href_entities_are_decoded
+    rich = H.to_rich('<a href="https:&#x2F;&#x2F;example.com&#x2F;a">x</a>')
+    assert_equal 'https://example.com/a', rich[:links].first[:url]
+  end
+
+  # Ranges are UTF-16 code units, so anything past the BMP must shift them.
+  def test_link_ranges_are_utf16_offsets
+    rich = H.to_rich('a 🎉 <a href="https://x.io">link</a>')
+    start, length = rich[:links].first[:range]
+    assert_equal 'link', H.utf16_slice(rich[:text], start, length)
+    assert_operator start, :>, rich[:text].index('link')
+  end
+
+  def test_bare_urls_become_links
+    rich = H.to_rich('go to https://bare.example.com/x now')
+    assert_equal ['https://bare.example.com/x'], rich[:links].map { |l| l[:url] }
+  end
+
+  def test_paragraph_break_is_configurable
+    assert_equal "one\n\ntwo", H.to_rich('<p>one</p><p>two</p>')[:text].sub(/\A\n+/, '')
+    assert_equal "one\ntwo",
+                 H.to_rich('<p>one</p><p>two</p>', paragraph_break: "\n")[:text].sub(/\A\n+/, '')
+  end
+
+  def test_bad_input_is_survivable
+    assert_equal '', H.to_text(nil)
+    assert_equal '', H.relative_time('not a date')
+    assert_equal '', H.relative_time(nil)
+  end
+end

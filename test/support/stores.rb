@@ -44,4 +44,49 @@ module HackerNews
       @data.delete(key)
     end
   end
+
+  # Stands in for NSUserDefaults, registrations and all.
+  #
+  # The real one is shared by every process on the machine, including the
+  # reader itself, so a test that used it would change what the reader shows
+  # the next time it launches -- which is exactly what happened once.
+  class MemoryDefaults
+    def initialize
+      @values     = {}
+      @registered = {}
+    end
+
+    def registerDefaults(hash)
+      hash.each { |key, value| @registered[key.to_s] = value }
+      hash
+    end
+
+    def objectForKey(key)
+      @values.key?(key.to_s) ? @values[key.to_s] : @registered[key.to_s]
+    end
+
+    def stringForKey(key)
+      value = objectForKey(key)
+      value.nil? ? nil : value.to_s
+    end
+
+    # A registered false has to read as false, not as "nothing stored".
+    def boolForKey(key)
+      objectForKey(key) ? true : false
+    end
+
+    def integerForKey(key)
+      objectForKey(key).to_i
+    end
+
+    def setObject_forKey(value, key)
+      @values[key.to_s] = value
+    end
+    alias setBool_forKey setObject_forKey
+    alias setInteger_forKey setObject_forKey
+
+    def removeObjectForKey(key)
+      @values.delete(key.to_s)
+    end
+  end
 end

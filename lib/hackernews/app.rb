@@ -64,15 +64,18 @@ module HackerNews
 
     # ---- construction --------------------------------------------------------
 
-    # Favorites is injectable for the same reason the API is: a test should
-    # not write to the reader's real saved list.
-    def initialize(api: API.new, favorites: nil)
+    # The API, the saved list and the preferences are all injectable for the
+    # same reason: a test should leave nothing behind on the machine it ran
+    # on, and every one of these otherwise writes where the reader's own copy
+    # lives.
+    def initialize(api: API.new, favorites: nil, settings: nil, history: nil)
       @api    = api
       @status = ''
 
-      Settings.register_defaults
-      @settings   = Settings.new
-      @history    = ReadingHistory.new(@settings)
+      @settings = settings || Settings.new
+      # Into whichever store is in use, not always the real one.
+      Settings.register_defaults(@settings.defaults)
+      @history    = history || ReadingHistory.new(@settings)
       @favorites  = favorites || Favorites.new
       @list       = StoryList.new(api: @api, history: @history, settings: @settings,
                                   favorites: @favorites)
