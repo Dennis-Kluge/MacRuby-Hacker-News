@@ -15,23 +15,43 @@ module HackerNews
     ARTICLE_MIN     = 420
     ARTICLE_DEFAULT = 560
 
-    # Two columns fit in a small window. Three need room for all three, or
-    # the one in the middle is squeezed to nothing between the minimums of
-    # the two either side.
-    MIN_SIZE      = [720, 460].freeze
-    MIN_SIZE_WIDE = [SIDEBAR_MIN + CONTENT_MIN + ARTICLE_MIN, 460].freeze
+    MIN_SIZE = [720, 460].freeze
+
+    # Below this there is no room for three columns. The window is not stopped
+    # from getting smaller -- the article column gives way instead.
+    ROOM_FOR_THREE = SIDEBAR_MIN + CONTENT_MIN + ARTICLE_MIN
 
     AUTOSAVE_NAME = 'HackerNewsMainWindow'
 
     # +accessory+ is an optional strip below the toolbar -- the search filter
     # bar -- which AppKit shows and hides for itself.
+    # One resize observer class for every window, each finding its own owner:
+    # Objective-C registers classes globally by name.
+    def self.observers
+      @observers ||= {}
+    end
+
+    def self.observer_class
+      @observer_class ||= Cocoa.define_class('HNWindowResizeObserver', 'NSObject') do |c|
+        c.define('windowDidResize:', 'v@:@') do |receiver, _note|
+          MainWindow.observers[receiver.objc_address]&.window_resized
+        end
+      end
+    end
+
     # +article+ is the optional third column: the page a story links to,
-    # beside its comments.
-    def initialize(title:, sidebar:, content:, toolbar:, accessory: nil, article: nil)
+    # beside its comments. +on_article+ is told when it comes and goes, which
+    # is not only when it is asked for -- a narrow window takes it away.
+    def initialize(title:, sidebar:, content:, toolbar:, accessory: nil,
+                   article: nil, on_article: nil)
+      @article_wanted = false
+      @on_article     = on_article
+
       build_split(sidebar, content, article)
       build_window(title)
       toolbar.install(@window)
       accessory&.install(@window)
+      observe_resizing
     end
 
     attr_reader :window
@@ -65,18 +85,47 @@ module HackerNews
       !@article_item.nil?
     end
 
+    # Whether it is on screen, which is not the same as whether it was asked
+    # for: a window too narrow for three columns puts it away.
     def article_visible?
       article_column? && !@article_item.isCollapsed
     end
 
-    # Collapsing rather than removing: the split view animates it, and the
-    # divider goes back where it was when it comes again.
-    def article_visible=(showing)
+    # Whether the reader wants it at all.
+    def article_wanted?
+      @article_wanted
+    end
+
+    def article_wanted=(wanted)
       return false unless article_column?
 
+      @article_wanted = wanted ? true : false
+      resize_for_article(@article_wanted)
+      apply_article_layout
+      @article_wanted
+    end
+
+    # Three columns need room for three. When there is not enough, the article
+    # gives way rather than the window refusing to shrink -- the stories and
+    # their comments are what the window is for, and they stay.
+    def room_for_article?
+      @window.nil? || @window.contentLayoutRect.width >= ROOM_FOR_THREE
+    end
+
+    def window_resized
+      apply_article_layout
+    end
+
+    # Collapsing rather than removing: the split view animates it, and the
+    # divider goes back where it was when it comes again.
+    def apply_article_layout
+      return unless article_column?
+
+      showing = @article_wanted && room_for_article?
+      return if showing == article_visible?
+
       @article_item.setCollapsed(!showing)
-      @window&.setMinSize(showing ? MIN_SIZE_WIDE : MIN_SIZE)
-      resize_for_article(showing)
+      @on_article&.call(showing)
       showing
     end
 
@@ -172,15 +221,27 @@ module HackerNews
       @window.center
     end
 
-    # Three columns in a window sized for two would squeeze the comments to
-    # nothing, so the window grows with the column -- but only if the reader
-    # has not already made it big enough.
+    # Asking for the column in a window sized for two opens it up, so that
+    # turning it on shows something rather than nothing -- but only if the
+    # reader has not already made the window big enough.
     def resize_for_article(showing)
-      wanted = showing ? SIDEBAR_DEFAULT + ARTICLE_MIN + ARTICLE_DEFAULT : WIDTH
-      return if @window.frame.width >= wanted
+      return unless showing
+
+      wanted = SIDEBAR_DEFAULT + ARTICLE_MIN + ARTICLE_DEFAULT
+      return if @window.nil? || @window.frame.width >= wanted
 
       frame = @window.frame
       @window.setFrame_display([frame.x, frame.y, wanted, frame.height], true)
+    end
+
+    def observe_resizing
+      observer = self.class.observer_class.alloc.init
+      self.class.observers[observer.objc_address] = self
+      @resize_observer = observer # the notification centre does not retain it
+
+      Cocoa::NSNotificationCenter.defaultCenter.addObserver_selector_name_object(
+        observer, 'windowDidResize:', Cocoa::NSWindowDidResizeNotification, @window
+      )
     end
   end
 end

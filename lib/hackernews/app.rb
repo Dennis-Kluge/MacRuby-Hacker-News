@@ -16,6 +16,7 @@ module HackerNews
     HN_ITEM      = 'hn.discussion'
     SECTION_ITEM = 'hn.sections'
     SHARE_ITEM   = 'hn.share'
+    ARTICLE_ITEM = 'hn.article'
     SEARCH_ITEM  = 'hn.search'
 
     # Long enough that moving through the list does not fetch what it passes.
@@ -434,8 +435,24 @@ module HackerNews
 
     # ---- the article beside the comments -------------------------------------
 
+    # What the reader asked for. Whether it is on screen is the window's
+    # business: too narrow for three columns and it puts the article away.
     def showing_article?
+      @main_window.article_wanted?
+    end
+
+    def article_on_screen?
       @main_window.article_visible?
+    end
+
+    # The window took the column away, or gave it back.
+    def article_column_changed(showing)
+      if showing
+        article_for(@story)
+      else
+        article_debounce.cancel
+        @article_pane.clear
+      end
     end
 
     # Moving down the list with the arrow keys would otherwise ask every site
@@ -457,14 +474,15 @@ module HackerNews
     end
 
     # Called as the selection changes; the request itself waits.
+    # Nothing is asked of any site while the column is not on screen.
     def article_for(story)
-      return unless showing_article?
+      return unless article_on_screen?
 
       story.nil? ? @article_pane.clear : article_debounce.schedule(story)
     end
 
     def load_article(story)
-      return if story.nil? || !showing_article?
+      return if story.nil? || !article_on_screen?
 
       @article_pane.show(story, story[:url].to_s)
     end
@@ -475,8 +493,9 @@ module HackerNews
 
     def showing_article=(showing)
       @settings.show_article = showing
-      @main_window.article_visible = showing
-      showing ? article_for(@story) : article_debounce.cancel
+      @main_window.article_wanted = showing
+      article_for(@story) if showing && article_on_screen?
+      article_debounce.cancel unless showing
       status(showing ? 'Showing the linked page' : 'Hiding the linked page')
       showing
     end
@@ -906,6 +925,10 @@ module HackerNews
                               Toolbar::Button.new(identifier: HN_ITEM, label: 'Discussion',
                                                   symbol: 'bubble.left.and.bubble.right',
                                                   action: -> { open_selected_discussion }),
+                              Toolbar::Button.new(identifier: ARTICLE_ITEM,
+                                                  label: 'Linked Page',
+                                                  symbol: 'sidebar.right',
+                                                  action: -> { toggle_article }),
                               Toolbar::Share.new(identifier: SHARE_ITEM, label: 'Share',
                                                  items: -> { share_items })
                             ])
@@ -921,9 +944,10 @@ module HackerNews
         content: @thread_view.pane,
         toolbar: toolbar,
         accessory: @search_bar,
-        article: @article_pane.pane
+        article: @article_pane.pane,
+        on_article: ->(showing) { article_column_changed(showing) }
       )
-      @main_window.article_visible = @settings.show_article?
+      @main_window.article_wanted = @settings.show_article?
     end
 
     # Hacker News's own sections, in its own order.

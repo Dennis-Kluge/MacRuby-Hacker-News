@@ -3429,6 +3429,7 @@ class TestHackerNewsToolbarLayout < Minitest::Test
                   Cocoa::NSToolbarFlexibleSpaceItemIdentifier.to_s,
                   HackerNews::App::SEARCH_ITEM,
                   HackerNews::App::HN_ITEM,
+                  HackerNews::App::ARTICLE_ITEM,
                   HackerNews::App::SHARE_ITEM],
                  identifiers.map(&:to_s)
   end
@@ -3608,18 +3609,64 @@ class TestHackerNewsArticleColumn < Minitest::Test
     assert_equal '3', item.keyEquivalent.to_s
   end
 
-  # Three columns need room for three; the one in the middle must not be
-  # squeezed away between the minimums either side of it.
-  def test_the_window_floor_rises_with_the_column
-    app.showing_article = false
+  # The window is never stopped from shrinking. Three columns need room for
+  # three, and when there is not enough the article is what gives way: the
+  # stories and their comments are what the window is for.
+  def test_the_window_can_always_shrink
+    app.showing_article = true
     assert_equal HackerNews::MainWindow::MIN_SIZE[0],
                  app.main_window.window.minSize.width
+  end
 
+  def test_a_narrow_window_puts_the_article_away_and_keeps_the_rest
     app.showing_article = true
-    assert_equal HackerNews::MainWindow::MIN_SIZE_WIDE[0],
-                 app.main_window.window.minSize.width
-    assert_operator app.main_window.window.frame.width, :>=,
-                    HackerNews::MainWindow::MIN_SIZE_WIDE[0]
+    assert app.article_on_screen?
+
+    resize(HackerNews::MainWindow::ROOM_FOR_THREE - 120)
+    refute app.article_on_screen?, 'the article should have given way'
+    assert app.showing_article?, 'but it is still what the reader asked for'
+
+    assert_operator app.story_view.view.frame.width, :>, 0
+    assert_operator app.thread_view.view.frame.width, :>,
+                    HackerNews::MainWindow::CONTENT_MIN - 80
+  end
+
+  def test_widening_the_window_brings_it_back
+    app.showing_article = true
+    resize(HackerNews::MainWindow::ROOM_FOR_THREE - 120)
+    refute app.article_on_screen?
+
+    resize(HackerNews::MainWindow::ROOM_FOR_THREE + 300)
+    assert app.article_on_screen?
+  end
+
+  # A window that grows past the threshold must not bring back a column the
+  # reader put away.
+  def test_widening_does_not_override_the_choice
+    app.showing_article = false
+    resize(HackerNews::MainWindow::ROOM_FOR_THREE + 300)
+
+    refute app.article_on_screen?
+    refute app.showing_article?
+  end
+
+  # Nothing is asked of any site while the column is not on screen, however
+  # it came to be off screen.
+  def test_a_squeezed_column_fetches_nothing
+    app.showing_article = true
+    resize(HackerNews::MainWindow::ROOM_FOR_THREE - 120)
+    app.instance_variable_set(:@story, nil)
+    app.select_story(0)
+
+    assert_nil pane.requested
+  end
+
+  def resize(width)
+    window = app.main_window.window
+    window.setFrame_display([window.frame.x, window.frame.y, width,
+                             window.frame.height], true)
+    window.contentView.layoutSubtreeIfNeeded
+    app.pump(0.5) { false }
   end
 
   # ---- what it shows -----------------------------------------------------

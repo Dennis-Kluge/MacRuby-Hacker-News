@@ -55,7 +55,7 @@ module HackerNews
     DEFAULT_PAGE_SIZE = 30
     DEFAULT_LINK_TARGET = :app
     DEFAULT_FAVICONS    = true
-    DEFAULT_ARTICLE     = true
+    DEFAULT_ARTICLE     = false
 
     def self.register_defaults
       defaults.registerDefaults(
