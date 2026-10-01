@@ -20,6 +20,15 @@ module HackerNews
     # rendered age, for one -- which has no business being persisted.
     FIELDS = %i[id title url domain author points comments].freeze
 
+    # Deliberately uncapped, unlike the reading history, which trims at 800.
+    #
+    # The history is incidental: it fills itself as you read and nobody minds
+    # losing the far end of it. A saved story was chosen, and silently
+    # dropping the oldest of those to keep a number down would be deleting
+    # something somebody asked for. At any plausible size the cost is a
+    # larger string in the preferences, which is cheap; at an implausible one
+    # the export is there.
+
     # Stored as one JSON string rather than an array of dictionaries.
     #
     # NSUserDefaults would take the nested structure, but it would come back
@@ -115,6 +124,18 @@ module HackerNews
       end
     end
 
+    # Add stories read back from an export. Returns how many were new.
+    #
+    # Merging rather than replacing: importing on a machine that already has
+    # saved stories should not throw them away, and importing the same file
+    # twice should do nothing the second time.
+    def merge(stories)
+      added = (stories || []).count { |story| adopt(story) }
+      sort_by_saved_at
+      persist if added.positive?
+      added
+    end
+
     def clear
       @records = []
       @index   = {}
@@ -133,6 +154,30 @@ module HackerNews
     end
 
     private
+
+    # Keeps whatever the export said it was saved at, so an imported story
+    # sits where it belongs in the list rather than at the top.
+    def adopt(story)
+      return false if story.nil? || story[:id].nil? || include?(story[:id])
+
+      record = FIELDS.each_with_object({}) { |field, kept| kept[field] = story[field] }
+      record[:saved_at] = story[:saved_at] || @clock.call.utc.iso8601
+
+      @records << record
+      @index[record[:id].to_s] = record
+      true
+    end
+
+    # Newest first, and stable: an import whose stories share a timestamp
+    # keeps the order the file had, rather than whatever the sort does with
+    # a tie.
+    def sort_by_saved_at
+      ordered = @records.each_with_index.sort do |(a, ai), (b, bi)|
+        by_date = b[:saved_at].to_s <=> a[:saved_at].to_s
+        by_date.zero? ? ai <=> bi : by_date
+      end
+      @records = ordered.map(&:first)
+    end
 
     # What the rest of the app sees: the saved record, plus how long ago that
     # was, which is what the list shows in place of the story's own age.

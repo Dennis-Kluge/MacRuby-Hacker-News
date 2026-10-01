@@ -80,6 +80,10 @@ class TestHackerNewsSaved < Minitest::Test
     ]
     stub.tree = { 'children' => [] }
     favorites.clear
+    # The menu bar outlives each test, and the save item's title depends on
+    # what is selected, so it is put back to a known wording.
+    app.story_view.deselect
+    app.menu_bar.refresh_titles
     app.search_delay = 0
     app.search('')
     app.show_section(:top)
@@ -278,6 +282,10 @@ class TestHackerNewsSaved < Minitest::Test
   # ---- the menus ---------------------------------------------------------
 
   def test_the_file_menu_offers_saving_and_exporting
+    # The save item's title depends on the selection, so it is settled first.
+    app.story_view.deselect
+    app.menu_bar.refresh_titles
+
     save = app.menu_bar.item_titled('File', 'Save Article')
     refute_nil save
     assert_equal 'd', save.keyEquivalent.to_s
@@ -340,6 +348,104 @@ class TestHackerNewsSaved < Minitest::Test
       assert_nil app.export_saved(:markdown)
     end
     assert_match(/Could not write/, app.status_text)
+  end
+
+  # ---- importing ---------------------------------------------------------
+
+  def with_import_from(path)
+    app.open_panel_runner = -> { path }
+    yield
+  ensure
+    app.open_panel_runner = nil
+  end
+
+  def exported_file(dir)
+    app.select_story(0)
+    app.toggle_saved
+    path = File.join(dir, 'hacker-news-saved.json')
+    with_export_to(path) { app.export_saved(:json) }
+    favorites.clear
+    path
+  end
+
+  def test_importing_an_export_brings_the_stories_back
+    Dir.mktmpdir('hn-import') do |dir|
+      path = exported_file(dir)
+      assert_equal 0, app.saved_count
+
+      with_import_from(path) { assert_equal 1, app.import_saved }
+      assert_equal 1, app.saved_count
+      assert favorites.include?('42')
+      assert_match(/Imported 1 story/, app.status_text)
+    end
+  end
+
+  # Importing the same file twice should do nothing the second time, and say
+  # so rather than looking like it failed.
+  def test_importing_twice_adds_nothing
+    Dir.mktmpdir('hn-import') do |dir|
+      path = exported_file(dir)
+      with_import_from(path) { app.import_saved }
+      with_import_from(path) { assert_equal 0, app.import_saved }
+
+      assert_equal 1, app.saved_count
+      assert_match(/Already had/, app.status_text)
+    end
+  end
+
+  def test_a_dismissed_panel_imports_nothing
+    with_import_from(nil) { assert_nil app.import_saved }
+    assert_match(/cancelled/, app.status_text)
+  end
+
+  def test_a_file_that_is_not_ours_is_reported
+    Dir.mktmpdir('hn-import') do |dir|
+      path = File.join(dir, 'something-else.json')
+      File.write(path, 'this is not an export')
+
+      with_import_from(path) { assert_nil app.import_saved }
+      assert_match(/not an export/, app.status_text)
+    end
+  end
+
+  def test_a_file_that_cannot_be_read_is_reported
+    with_import_from('/nowhere-at-all/saved.json') { assert_nil app.import_saved }
+    assert_match(/Could not read/, app.status_text)
+  end
+
+  # The Saved section is a view of the store, so an import has to show up.
+  def test_importing_while_the_section_is_showing_updates_it
+    Dir.mktmpdir('hn-import') do |dir|
+      path = exported_file(dir)
+      app.show_section(:saved)
+      assert_equal 0, app.list.size
+
+      with_import_from(path) { app.import_saved }
+      assert_equal 1, app.list.size
+    end
+  end
+
+  # The right-click menu has reworded itself since it existed; the File menu
+  # said "Save Article" over a story that was already saved.
+  def test_the_file_menu_item_says_which_way_it_will_go
+    app.select_story(0)
+    app.menu_bar.refresh_titles
+    item = app.menu_bar.item_titled('File', 'Save Article')
+    refute_nil item, 'should read Save Article for an unsaved story'
+
+    app.toggle_saved
+    app.menu_bar.refresh_titles
+    refute_nil app.menu_bar.item_titled('File', 'Remove from Saved')
+    assert_nil app.menu_bar.item_titled('File', 'Save Article')
+
+    # And the shortcut travels with it.
+    assert_equal 'd', app.menu_bar.item_titled('File', 'Remove from Saved')
+                                  .keyEquivalent.to_s
+  end
+
+  def test_the_file_menu_offers_it
+    item = app.menu_bar.item_titled('File', 'Import Saved Articles…')
+    refute_nil item
   end
 
   def test_clearing_from_the_preferences

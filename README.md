@@ -90,6 +90,12 @@ The formatters are plain Ruby: stories in, a String out. No panels, no file
 system, so each format is checked without any of that, down to the escaping
 of a title with `&`, `<` and `"` in it.
 
+**Importing.** File → Import Saved Articles reads a JSON export back, merging
+rather than replacing — importing on a machine that already has saved
+stories does not throw them away, and importing the same file twice does
+nothing the second time. Only JSON comes back: the other three drop fields on
+the way out, because a bookmarks file is not a place to keep a comment count.
+
 **Paging.** The list pages as you scroll. The front page is exactly thirty
 stories, so anything past it continues with the last week's stories ranked by
 points — roughly what Hacker News's own "More" link amounts to. Consecutive
@@ -254,13 +260,16 @@ that built it, so it is not portable to another machine.
 
 ## Tests
 
+They also run on every push, on Apple Silicon, for Ruby 3.1 and 3.3 across
+two macOS versions.
+
 ```bash
 rake test          # everything
 rake app_test      # the reader
 rake bridge_test   # the bridge
 ```
 
-483 tests, 1,914 assertions, on Ruby 3.3 (`x86_64` under Rosetta) and on
+504 tests, 2,034 assertions, on Ruby 3.3 (`x86_64` under Rosetta) and on
 macOS's own Ruby 2.6 (native `arm64e`) alike — and on five different random
 orderings, because a suite that only passes in one order is not passing.
 

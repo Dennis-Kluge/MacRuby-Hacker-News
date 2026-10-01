@@ -45,6 +45,39 @@ module HackerNews
       "hacker-news-saved.#{self[key].extension}"
     end
 
+    # ---- reading one back ----------------------------------------------------
+
+    # JSON is the only one of the four that round-trips: the others drop
+    # fields on the way out, by design, because a bookmarks file is not a
+    # place to keep a comment count.
+    IMPORTABLE = %w[json].freeze
+
+    # Returns the stories in +text+, or nil when it is not a file we wrote.
+    #
+    # Nothing here raises: this is handed a file somebody chose, and the
+    # answer to the wrong file is to say so, not to fall over.
+    def self.parse(text)
+      parsed = JSON.parse(text.to_s, symbolize_names: true)
+      stories = parsed.is_a?(Hash) ? parsed[:stories] : parsed
+      return nil unless stories.is_a?(Array)
+
+      kept = stories.select { |story| story.is_a?(Hash) && !story[:id].nil? }
+      kept.map { |story| restore(story) }
+    rescue JSON::ParserError
+      nil
+    end
+
+    # Only the fields a saved story is made of, so an export someone has
+    # edited cannot introduce whatever it likes into the store.
+    def self.restore(story)
+      record = Favorites::FIELDS.each_with_object({}) do |field, kept|
+        kept[field] = story[field]
+      end
+      record[:id] = record[:id].to_s
+      record[:saved_at] = story[:saved_at] if story[:saved_at]
+      record
+    end
+
     # ---- the formats ---------------------------------------------------------
 
     # Readable first: this is the one that gets pasted into a notebook.

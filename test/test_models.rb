@@ -921,3 +921,102 @@ class TestHackerNewsHTML < Minitest::Test
     assert_equal '', H.relative_time(nil)
   end
 end
+
+class TestExportImport < Minitest::Test
+  AT = Time.utc(2026, 9, 29, 12, 0, 0)
+
+  def setup
+    @saved = HackerNews::Favorites.new(store: HackerNews::MemoryText.new,
+                                       clock: -> { AT })
+    @saved.add(story(1, 'First'))
+    @saved.add(story(2, 'Second'))
+    @json = HackerNews::Export.render(:json, @saved.stories, now: AT)
+  end
+
+  def fresh
+    HackerNews::Favorites.new(store: HackerNews::MemoryText.new, clock: -> { AT })
+  end
+
+  def test_what_goes_out_comes_back
+    stories = HackerNews::Export.parse(@json)
+
+    assert_equal 2, stories.size
+    assert_equal %w[2 1], stories.map { |s| s[:id] }
+    assert_equal 'Second', stories.first[:title]
+    assert_equal 'https://example.com/2', stories.first[:url]
+  end
+
+  def test_merging_into_an_empty_list
+    list = fresh
+    assert_equal 2, list.merge(HackerNews::Export.parse(@json))
+    assert_equal %w[Second First], list.stories.map { |s| s[:title] }
+  end
+
+  # Importing the same file twice should do nothing the second time.
+  def test_merging_is_idempotent
+    list = fresh
+    list.merge(HackerNews::Export.parse(@json))
+    assert_equal 0, list.merge(HackerNews::Export.parse(@json))
+    assert_equal 2, list.size
+  end
+
+  # And it must not throw away what is already there.
+  def test_merging_keeps_what_was_already_saved
+    list = fresh
+    list.add(story(9, 'Mine'))
+    added = list.merge(HackerNews::Export.parse(@json))
+
+    assert_equal 2, added
+    assert_equal 3, list.size
+    assert_includes list.stories.map { |s| s[:title] }, 'Mine'
+  end
+
+  # An imported story belongs where it was saved, not at the top.
+  def test_the_date_saved_survives_the_round_trip
+    list = fresh
+    older = story(5, 'Older').merge(saved_at: '2020-01-01T00:00:00Z')
+    list.merge([older] + HackerNews::Export.parse(@json))
+
+    assert_equal 'Older', list.stories.last[:title]
+    assert_equal '2020-01-01T00:00:00Z', list.stories.last[:saved_at]
+  end
+
+  # Handed a file somebody chose, the answer to the wrong file is to say so.
+  def test_anything_that_is_not_one_of_ours_reads_as_nil
+    ['not json', '"a string"', '42', '', '{"nope": 1}'].each do |bad|
+      assert_nil HackerNews::Export.parse(bad), bad.inspect
+    end
+  end
+
+  # The other three formats drop fields on the way out, by design.
+  def test_only_json_comes_back
+    assert_equal %w[json], HackerNews::Export::IMPORTABLE
+    %i[markdown opml bookmarks].each do |key|
+      assert_nil HackerNews::Export.parse(HackerNews::Export.render(key, @saved.stories)), key.to_s
+    end
+  end
+
+  # A bare array, in case someone hands back just the stories.
+  def test_a_plain_array_is_accepted
+    stories = HackerNews::Export.parse('[{"id":"7","title":"Bare"}]')
+    assert_equal %w[7], stories.map { |s| s[:id] }
+  end
+
+  # An edited export must not introduce whatever it likes into the store.
+  def test_only_the_fields_a_saved_story_is_made_of
+    stories = HackerNews::Export.parse(
+      '[{"id":"7","title":"Bare","evil":"x","saved_at":"2021-01-01T00:00:00Z"}]'
+    )
+    refute_includes stories.first.keys, :evil
+    assert_equal '2021-01-01T00:00:00Z', stories.first[:saved_at]
+  end
+
+  def test_an_id_that_is_a_number_becomes_a_string
+    stories = HackerNews::Export.parse('[{"id":7,"title":"Numeric"}]')
+    assert_equal '7', stories.first[:id]
+
+    list = fresh
+    list.merge(stories)
+    assert list.include?('7')
+  end
+end

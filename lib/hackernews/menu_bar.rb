@@ -13,10 +13,36 @@ module HackerNews
     OPTION   = Cocoa::NSEventModifierFlagOption
     CONTROL  = Cocoa::NSEventModifierFlagControl
 
+    # One menu delegate class for every menu bar, each finding its own owner:
+    # Objective-C registers classes globally by name.
+    def self.owners
+      @owners ||= {}
+    end
+
+    def self.delegate_class
+      @delegate_class ||= Cocoa.define_class(
+        'HNMenuDelegate', 'NSObject', protocols: %w[NSMenuDelegate]
+      ) do |c|
+        c.define('menuNeedsUpdate:', 'v@:@') do |receiver, _menu|
+          MenuBar.owners[receiver.objc_address]&.refresh_titles
+        end
+      end
+    end
+
     def initialize(app_name:, commands:)
       @app_name = app_name
       @commands = commands
       @targets  = {}
+      @dynamic  = {}
+    end
+
+    # Items whose wording depends on what is selected, reworded just before
+    # the menu opens. The right-click menu has done this since it existed;
+    # the File menu said "Save Article" over a story that was already saved.
+    def refresh_titles
+      @dynamic.each do |item, wording|
+        item.setTitle(wording.call)
+      end
     end
 
     # The main menu this installed. NSApplication has only one, and anything
@@ -94,9 +120,14 @@ module HackerNews
       command(menu, 'Open on Hacker News', :open_discussion, key: 'o', modifiers: CMD | SHIFT)
       command(menu, 'Open in Default Browser', :open_externally, key: 'o', modifiers: CMD | OPTION)
       separator(menu)
-      command(menu, 'Save Article', :save_article, key: 'd')
+      saved = command(menu, 'Save Article', :save_article, key: 'd')
+      watch(menu)
+      @dynamic[saved] = lambda do
+        @commands[:saved?]&.call ? 'Remove from Saved' : 'Save Article'
+      end
       nest(menu, 'Export Saved Articles',
            Export::ALL.map { |format| [format.label, :"export_#{format.key}"] })
+      command(menu, 'Import Saved Articles…', :import_saved)
       separator(menu)
       command(menu, 'Share…', :share, key: 's', modifiers: CMD | SHIFT)
       command(menu, 'Copy Link', :copy_link, key: 'c', modifiers: CMD | SHIFT)
@@ -212,6 +243,15 @@ module HackerNews
 
     def separator(menu)
       menu.addItem(Cocoa::NSMenuItem.separatorItem)
+    end
+
+    # The menu holds its delegate weakly, so it is kept here.
+    def watch(menu)
+      return if @menu_delegate
+
+      @menu_delegate = self.class.delegate_class.alloc.init
+      self.class.owners[@menu_delegate.objc_address] = self
+      menu.setDelegate(@menu_delegate)
     end
   end
 end

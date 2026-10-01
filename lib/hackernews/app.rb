@@ -146,6 +146,9 @@ module HackerNews
         clear_search:     -> { clear_search },
         share:            -> { share_selected },
         save_article:     -> { toggle_saved },
+        # Asked before the File menu opens, so the item can say which way
+        # ⌘D will go for whatever is selected.
+        saved?:           -> { saved?(selected_story) },
         copy_link:        -> { copy_link },
         guidelines:       -> { open_link(GUIDELINES, title: 'Guidelines') }
       }.merge(section_commands).merge(search_commands).merge(export_commands)
@@ -156,7 +159,7 @@ module HackerNews
     def export_commands
       Export::ALL.each_with_object({}) do |format, commands|
         commands[:"export_#{format.key}"] = -> { export_saved(format.key) }
-      end
+      end.merge(import_saved: -> { import_saved })
     end
 
     # One command per section, so each can have a shortcut.
@@ -532,9 +535,11 @@ module HackerNews
     end
 
     # The Saved section is a view of the store, so changing the store changes
-    # the list itself; every other section only needs its star back.
+    # the list itself; every other section only needs its star back. A nil
+    # story means more than one changed, so everything is redrawn.
     def saved_changed(story)
       return load_front_page if @list.local?
+      return @story_view.invalidate if story.nil?
 
       @story_view.refresh_row(@list.index_of(story))
     end
@@ -563,6 +568,61 @@ module HackerNews
       end
 
       write_export(path, Export.render(key, stories), stories.size)
+    end
+
+    # Read an export back in. Returns how many stories were added, or nil
+    # when there was nothing to read.
+    def import_saved
+      path = ask_what_to_open
+      if path.nil?
+        status('Import cancelled')
+        return nil
+      end
+
+      text = File.read(path)
+      stories = Export.parse(text)
+      if stories.nil?
+        status("#{File.basename(path)} is not an export this can read")
+        return nil
+      end
+
+      added = @favorites.merge(stories)
+      saved_changed(nil)
+      status(import_status(added, stories.size))
+      added
+    rescue SystemCallError => e
+      status("Could not read #{File.basename(path)}: #{e.message}")
+      nil
+    end
+
+    # Says what happened to the ones that were already there, because
+    # importing a file twice looking like it did nothing is confusing.
+    def import_status(added, total)
+      return 'Nothing in that file to import' if total.zero?
+      return "Already had all #{pluralize(total, 'story', 'stories')}" if added.zero?
+
+      kept = total - added
+      kept.zero? ? "Imported #{pluralize(added, 'story', 'stories')}"
+                 : "Imported #{added}, already had #{kept}"
+    end
+
+    # Replaceable, so tests can import without anyone clicking a panel.
+    def open_panel_runner
+      @open_panel_runner ||= lambda do
+        panel = Cocoa::NSOpenPanel.openPanel
+        panel.setTitle('Import Saved Articles')
+        panel.setAllowedFileTypes(['json'])
+        panel.setAllowsMultipleSelection(false)
+        panel.setCanChooseDirectories(false)
+        panel.runModal == Cocoa::NSModalResponseOK ? panel.URL&.path.to_s : nil
+      end
+    end
+
+    attr_writer :open_panel_runner
+
+    def ask_what_to_open
+      path = open_panel_runner.call
+      path.to_s.empty? ? nil : path.to_s
     end
 
     # Replaceable, so tests can export without anyone clicking a panel.
