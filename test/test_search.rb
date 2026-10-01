@@ -208,6 +208,21 @@ class TestDebounce < Minitest::Test
     )
   end
 
+  # Waits for something to happen rather than for a fixed stretch of time.
+  #
+  # A timer set for 50ms was being given 300ms and asserted on, which is
+  # true of an idle machine and not of a loaded CI runner -- it failed there
+  # once and passed on the next run. The deadline is generous because it is
+  # only ever reached when the test is about to fail anyway.
+  def pump_until(seconds = 10)
+    deadline = Time.now + seconds
+    loop do
+      pump(0.02)
+      break true if yield
+      break false if Time.now > deadline
+    end
+  end
+
   def test_only_the_last_request_runs
     seen = []
     debounce = HackerNews::Debounce.new(delay: 0.05) { |text| seen << text }
@@ -216,18 +231,21 @@ class TestDebounce < Minitest::Test
     debounce.schedule('ru')
     debounce.schedule('rust')
     assert debounce.pending?
-    pump(0.3)
+    assert pump_until { seen.any? }, 'the timer never fired'
 
     assert_equal ['rust'], seen
     refute debounce.pending?
   end
 
+  # Asserting that nothing happened cannot poll for it, so this one does
+  # wait a fixed stretch -- generously, since a false pass costs nothing and
+  # a false failure costs a morning.
   def test_cancelling_drops_the_request
     seen = []
     debounce = HackerNews::Debounce.new(delay: 0.05) { |text| seen << text }
     debounce.schedule('rust')
     debounce.cancel
-    pump(0.2)
+    pump(0.5)
 
     assert_empty seen
   end
