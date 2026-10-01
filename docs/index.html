@@ -11,105 +11,7 @@
 <meta property="og:description" content="Real AppKit, driven from Ruby through a Cocoa bridge built for it. No patched interpreter.">
 <meta property="og:image" content="https://dennis-kluge.github.io/MacRuby-Hacker-News/img/hackernews.png">
 <meta property="og:type" content="website">
-<style>
-  :root {
-    --orange-top: #FF7521;
-    --orange-bottom: #E84A05;
-    --bg: #ffffff;
-    --bg-soft: #f6f6f7;
-    --ink: #16181d;
-    --ink-soft: #5c6169;
-    --rule: #e3e4e8;
-    --code-bg: #f3f4f6;
-    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 12px 32px rgba(0,0,0,.10);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #16181d;
-      --bg-soft: #1d2026;
-      --ink: #eceef2;
-      --ink-soft: #9aa0ab;
-      --rule: #2b2f37;
-      --code-bg: #22262d;
-      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 16px 40px rgba(0,0,0,.45);
-    }
-  }
-  * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--ink);
-    font: 17px/1.65 ui-sans-serif, -apple-system, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
-    -webkit-font-smoothing: antialiased;
-  }
-  .wrap { max-width: 960px; margin: 0 auto; padding: 0 16px; }
-  a { color: inherit; }
-
-  /* ---- hero ---- */
-  header { padding: 72px 0 8px; text-align: center; }
-  .icon { width: 104px; height: 104px; border-radius: 23%; box-shadow: var(--shadow); }
-  h1 { font-size: 2.6rem; line-height: 1.1; margin: 22px 0 8px; letter-spacing: -.02em; }
-  .tagline { font-size: 1.2rem; color: var(--ink-soft); margin: 0 auto; max-width: 34ch; }
-  .actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 28px 0 0; }
-  .btn {
-    display: inline-block; padding: 11px 20px; border-radius: 10px;
-    text-decoration: none; font-weight: 600; font-size: .98rem; border: 1px solid transparent;
-  }
-  .btn-primary {
-    color: #fff;
-    background: linear-gradient(180deg, var(--orange-top), var(--orange-bottom));
-  }
-  .btn-secondary { border-color: var(--rule); background: var(--bg-soft); }
-
-  figure { margin: 44px 0 0; }
-  figure img {
-    width: 100%; height: auto; display: block;
-    border-radius: 12px; border: 1px solid var(--rule); box-shadow: var(--shadow);
-  }
-  figcaption { color: var(--ink-soft); font-size: .92rem; margin-top: 12px; text-align: center; }
-
-  /* ---- sections ---- */
-  section { padding: 64px 0 0; }
-  h2 { font-size: 1.5rem; margin: 0 0 14px; letter-spacing: -.01em; }
-  p { margin: 0 0 16px; }
-  .lede { font-size: 1.1rem; }
-  .muted { color: var(--ink-soft); }
-
-  .feature { display: grid; gap: 28px; align-items: center; padding: 56px 0 0; }
-  @media (min-width: 760px) {
-    .feature { grid-template-columns: 1fr 1.25fr; gap: 40px; }
-    .feature.flip .text { order: 2; }
-  }
-  .feature h3 { font-size: 1.22rem; margin: 0 0 10px; }
-  .feature p { margin: 0 0 10px; }
-  .feature img {
-    width: 100%; height: auto; display: block;
-    border-radius: 10px; border: 1px solid var(--rule); box-shadow: var(--shadow);
-  }
-
-  kbd {
-    font: 600 .85em ui-monospace, SFMono-Regular, Menlo, monospace;
-    background: var(--code-bg); border: 1px solid var(--rule);
-    border-radius: 5px; padding: 1px 6px; white-space: nowrap;
-  }
-  pre {
-    background: var(--code-bg); border: 1px solid var(--rule); border-radius: 10px;
-    padding: 16px 18px; overflow-x: auto; margin: 0 0 16px;
-  }
-  code { font: .9em/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
-  pre code { font-size: .92rem; }
-
-  ul.plain { list-style: none; padding: 0; margin: 0 0 16px; }
-  ul.plain li { padding: 9px 0; border-bottom: 1px solid var(--rule); }
-  ul.plain li:last-child { border-bottom: 0; }
-
-  footer {
-    margin-top: 80px; padding: 32px 0 56px;
-    border-top: 1px solid var(--rule); color: var(--ink-soft); font-size: .92rem;
-  }
-  footer a { color: var(--ink-soft); }
-</style>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
@@ -122,6 +24,7 @@
     <div class="actions">
       <a class="btn btn-primary" href="https://github.com/Dennis-Kluge/MacRuby-Hacker-News">View on GitHub</a>
       <a class="btn btn-secondary" href="#build">Build it</a>
+      <a class="btn btn-secondary" href="changelog.html">What's new</a>
     </div>
 
     <figure>
@@ -253,6 +156,7 @@ rake app     # build Hacker News.app, with a Dock icon and a name</code></pre>
     <p>
       MIT licensed ·
       <a href="https://github.com/Dennis-Kluge/MacRuby-Hacker-News">Source on GitHub</a> ·
+      <a href="changelog.html">Release notes</a> ·
       Stories and comments from the Algolia Hacker News API
     </p>
     <p>Not affiliated with Y Combinator or Hacker News.</p>

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hacker News — release notes</title>
+<meta name="description" content="What changed in each release of Hacker News, a Mac app written in Ruby.">
+<link rel="icon" href="img/icon-64.png" sizes="64x64">
+<link rel="apple-touch-icon" href="img/icon-180.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap page">
+<a class="back" href="./">← Hacker News</a>
+<h1>Release notes</h1>
+<section class="release">
+<h2>1.1</h2>
+<p><strong>Saving and exporting.</strong> ⌘D keeps the story you are reading, and a Saved section sits beside Hacker News&#39;s own on ⌘7, answered from disk rather than the API. What is kept is the whole story, not a reference to it. Export the lot as Markdown, JSON, OPML or a bookmarks file Safari, Chrome and Firefox all import — and read a JSON export back in, merging rather than replacing.</p>
+<p><strong>Search.</strong> ⌘F narrows whichever section is showing, with a sort and a date range in a bar that appears only while you are searching. Sorting by date asks precisely, because nothing downstream will rank a bad match down; sorting by relevance stays forgiving.</p>
+<p><strong>The linked page, in a third column.</strong> ⌃⌘3 and the window becomes stories, the page they link to, and the comments. Off by default. Three columns need room for three, so below that the article gives way rather than the window refusing to shrink.</p>
+<p><strong>The title bar carries controls and nothing else.</strong> In a unified toolbar the title sits beside them and was the widest thing in the row; the status line moved under the story list, where it is no longer truncated. The toolbar is customisable and remembers its arrangement.</p>
+<p><strong>Fixed</strong></p>
+<ul>
+  <li>The status bar hairline was invisible in dark mode: a <code>CGColor</code> resolves a dynamic colour once and keeps that value.</li>
+  <li>The preferences window clipped its last rows — it was laid out to fit, but only ever shrank.</li>
+  <li>The reader treated a cancelled load as a failure, so following a link before the previous page arrived put an error in its subtitle.</li>
+  <li>Story ages now read in years and months rather than &quot;4,800 days ago&quot;.</li>
+</ul>
+<p><strong>Under it</strong></p>
+<ul>
+  <li>The reader window and the article column share one <code>WebView</code> instead of a web view and a navigation delegate each.</li>
+  <li>Tests split into eight files by subject, none of which writes to the preferences the reader is actually using.</li>
+  <li>Tests run on every push, on Apple Silicon.</li>
+</ul>
+</section>
+<section class="release">
+<h2>1.0</h2>
+<p>A Hacker News reader for macOS written in Ruby: stories, comments, sections, endless scrolling, site icons, a built-in reader, reading history, and a <code>.app</code> bundle with an icon drawn rather than shipped.</p>
+</section>
+<footer>
+  <p>MIT licensed · <a href="https://github.com/Dennis-Kluge/MacRuby-Hacker-News">Source on GitHub</a> ·
+     <a href="https://github.com/Dennis-Kluge/MacRuby-Hacker-News/releases">Releases</a></p>
+</footer>
+</div>
+</body>
+</html>

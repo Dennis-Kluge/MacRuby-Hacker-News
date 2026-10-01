@@ -25,6 +25,11 @@ task run: :compile do
   sh 'bin/hackernews'
 end
 
+desc 'Render the release notes into the site'
+task :site do
+  sh 'ruby tools/build_changelog.rb'
+end
+
 desc 'Build Hacker News.app into build/'
 task app: :compile do
   sh 'ruby tools/build_app.rb'
