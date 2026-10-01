@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hacker News — a Mac app written in Ruby</title>
+<meta name="description" content="A Hacker News reader for macOS written in Ruby: real AppKit through a Cocoa bridge built for it, on stock CRuby.">
+<link rel="icon" href="img/icon-64.png" sizes="64x64">
+<link rel="apple-touch-icon" href="img/icon-180.png">
+<meta property="og:title" content="Hacker News — a Mac app written in Ruby">
+<meta property="og:description" content="Real AppKit, driven from Ruby through a Cocoa bridge built for it. No patched interpreter.">
+<meta property="og:image" content="https://dennis-kluge.github.io/MacRuby-Hacker-News/img/hackernews.png">
+<meta property="og:type" content="website">
+<style>
+  :root {
+    --orange-top: #FF7521;
+    --orange-bottom: #E84A05;
+    --bg: #ffffff;
+    --bg-soft: #f6f6f7;
+    --ink: #16181d;
+    --ink-soft: #5c6169;
+    --rule: #e3e4e8;
+    --code-bg: #f3f4f6;
+    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 12px 32px rgba(0,0,0,.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d;
+      --bg-soft: #1d2026;
+      --ink: #eceef2;
+      --ink-soft: #9aa0ab;
+      --rule: #2b2f37;
+      --code-bg: #22262d;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 16px 40px rgba(0,0,0,.45);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 17px/1.65 ui-sans-serif, -apple-system, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+  a { color: inherit; }
+
+  /* ---- hero ---- */
+  header { padding: 72px 0 8px; text-align: center; }
+  .icon { width: 104px; height: 104px; border-radius: 23%; box-shadow: var(--shadow); }
+  h1 { font-size: 2.6rem; line-height: 1.1; margin: 22px 0 8px; letter-spacing: -.02em; }
+  .tagline { font-size: 1.2rem; color: var(--ink-soft); margin: 0 auto; max-width: 34ch; }
+  .actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 28px 0 0; }
+  .btn {
+    display: inline-block; padding: 11px 20px; border-radius: 10px;
+    text-decoration: none; font-weight: 600; font-size: .98rem; border: 1px solid transparent;
+  }
+  .btn-primary {
+    color: #fff;
+    background: linear-gradient(180deg, var(--orange-top), var(--orange-bottom));
+  }
+  .btn-secondary { border-color: var(--rule); background: var(--bg-soft); }
+
+  figure { margin: 44px 0 0; }
+  figure img {
+    width: 100%; height: auto; display: block;
+    border-radius: 12px; border: 1px solid var(--rule); box-shadow: var(--shadow);
+  }
+  figcaption { color: var(--ink-soft); font-size: .92rem; margin-top: 12px; text-align: center; }
+
+  /* ---- sections ---- */
+  section { padding: 64px 0 0; }
+  h2 { font-size: 1.5rem; margin: 0 0 14px; letter-spacing: -.01em; }
+  p { margin: 0 0 16px; }
+  .lede { font-size: 1.1rem; }
+  .muted { color: var(--ink-soft); }
+
+  .feature { display: grid; gap: 28px; align-items: center; padding: 56px 0 0; }
+  @media (min-width: 760px) {
+    .feature { grid-template-columns: 1fr 1.25fr; gap: 40px; }
+    .feature.flip .text { order: 2; }
+  }
+  .feature h3 { font-size: 1.22rem; margin: 0 0 10px; }
+  .feature p { margin: 0 0 10px; }
+  .feature img {
+    width: 100%; height: auto; display: block;
+    border-radius: 10px; border: 1px solid var(--rule); box-shadow: var(--shadow);
+  }
+
+  kbd {
+    font: 600 .85em ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--code-bg); border: 1px solid var(--rule);
+    border-radius: 5px; padding: 1px 6px; white-space: nowrap;
+  }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--rule); border-radius: 10px;
+    padding: 16px 18px; overflow-x: auto; margin: 0 0 16px;
+  }
+  code { font: .9em/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  pre code { font-size: .92rem; }
+
+  ul.plain { list-style: none; padding: 0; margin: 0 0 16px; }
+  ul.plain li { padding: 9px 0; border-bottom: 1px solid var(--rule); }
+  ul.plain li:last-child { border-bottom: 0; }
+
+  footer {
+    margin-top: 80px; padding: 32px 0 56px;
+    border-top: 1px solid var(--rule); color: var(--ink-soft); font-size: .92rem;
+  }
+  footer a { color: var(--ink-soft); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header>
+    <img class="icon" src="img/icon-512.png" alt="" width="104" height="104">
+    <h1>Hacker News</h1>
+    <p class="tagline">A Mac app written in Ruby. Real AppKit, no patched interpreter.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="https://github.com/Dennis-Kluge/MacRuby-Hacker-News">View on GitHub</a>
+      <a class="btn btn-secondary" href="#build">Build it</a>
+    </div>
+
+    <figure>
+      <img src="img/hackernews.png" alt="The reader: stories on the left, the full comment thread on the right."
+           width="1200" height="858">
+      <figcaption>Stories on the left, the full comment thread on the right.</figcaption>
+    </figure>
+  </header>
+
+  <section>
+    <h2>Not Ruby generating a user interface</h2>
+    <p class="lede">
+      An <code>NSSplitViewController</code> with a sidebar, a unified toolbar with SF
+      Symbols, view-based tables, a <code>WKWebView</code>, the system share sheet —
+      all of it driven from Ruby, through a bridge written for the purpose.
+    </p>
+    <p class="muted">
+      That bridge is the point. <a href="https://github.com/macruby/macruby">MacRuby</a>
+      answered the question “can a Mac application be written in Ruby?” until it stopped
+      working: it depended on Apple's Objective-C garbage collector, which no longer
+      exists, and on an LLVM JIT roughly sixteen major versions behind. Both of those
+      were about <em>being a Ruby implementation</em>, not about talking to Cocoa — and
+      the metadata that makes bridging possible is still shipped and still maintained by
+      Apple, in 216 frameworks. So this bridges to a Ruby instead of replacing one.
+    </p>
+  </section>
+
+  <div class="feature">
+    <div class="text">
+      <h3>The page, beside the comments</h3>
+      <p>
+        <kbd>⌃⌘3</kbd> and the window becomes stories, the page they link to, and the
+        comments — in the order you read them. The page loads as the selection changes,
+        after a pause long enough that arrowing down the list does not ask every site in
+        turn for something nobody waited to see.
+      </p>
+      <p class="muted">
+        Three columns need room for three. When the window has not got it, the article
+        gives way and the list and its comments keep the space.
+      </p>
+    </div>
+    <img src="img/hackernews_three_column.png" loading="lazy"
+         alt="Three columns: the story list, a GitHub page, and the comment thread."
+         width="1200" height="707">
+  </div>
+
+  <div class="feature flip">
+    <div class="text">
+      <h3>Search that means it</h3>
+      <p>
+        <kbd>⌘F</kbd> narrows whichever section is showing, with a sort and a date range
+        in a bar that appears only while you are searching.
+      </p>
+      <p class="muted">
+        Sorting by date asks precisely, because nothing downstream will rank a bad match
+        down — otherwise a search for “rust” comes back full of “trust” and “restart”.
+        Sorting by relevance stays forgiving, which is what still finds Kubernetes when
+        you type “kubernets”.
+      </p>
+    </div>
+    <img src="img/hackernews_search.png" loading="lazy"
+         alt="Search results with a filter bar for sort order and date range."
+         width="1200" height="858">
+  </div>
+
+  <div class="feature">
+    <div class="text">
+      <h3>Keep things, and take them with you</h3>
+      <p>
+        <kbd>⌘D</kbd> saves the story you are reading into a section of its own. What is
+        kept is the whole story, not a reference to it — the API will not necessarily
+        still answer for it months later.
+      </p>
+      <p class="muted">
+        Export the lot as Markdown, JSON, OPML, or a bookmarks file Safari, Chrome and
+        Firefox all import.
+      </p>
+    </div>
+    <img src="img/hackernews_saved.png" loading="lazy"
+         alt="The Saved section, each row showing when it was saved."
+         width="1200" height="858">
+  </div>
+
+  <section>
+    <h2>And the rest</h2>
+    <ul class="plain">
+      <li><strong>Selectable, clickable comments.</strong> Every row is a real <code>NSTextField</code>, so links work and text copies.</li>
+      <li><strong>Endless scrolling</strong> through Hacker News's own sections, each on a ⌘-number.</li>
+      <li><strong>Site icons</strong> fetched straight from the domain, not through a favicon service — no third party is handed your reading list.</li>
+      <li><strong>A built-in reader</strong> with its own history, or your default browser. Whichever you prefer.</li>
+      <li><strong>Refetches on a timer</strong>, but only when you have not scrolled away.</li>
+      <li><strong>A customisable toolbar</strong>, and a title bar that carries controls and nothing else.</li>
+    </ul>
+  </section>
+
+  <section id="build">
+    <h2>Build it</h2>
+    <p>macOS 12 or later, and any Ruby with a working compiler.</p>
+<pre><code>git clone https://github.com/Dennis-Kluge/MacRuby-Hacker-News.git
+cd MacRuby-Hacker-News
+
+rake run     # compile the bridge, then start the reader
+rake app     # build Hacker News.app, with a Dock icon and a name</code></pre>
+    <p class="muted">
+      There is no release to download: the <code>.app</code> hardcodes the Ruby that
+      built it, so it is not portable to another machine. Building it takes a few
+      seconds.
+    </p>
+  </section>
+
+  <section>
+    <h2>The bridge underneath</h2>
+    <p>
+      <code>cocoa/</code> is a subproject of its own — library, C extension, tests and
+      examples. Message sending through <code>libffi</code>, structs by value, Ruby
+      blocks as Objective-C blocks, Ruby methods as real <code>IMP</code>s so delegates
+      and target/action work, and Cocoa exceptions as rescuable Ruby ones.
+    </p>
+    <p class="muted">
+      483 tests across the two, passing identically on Ruby 3.3 under Rosetta and on
+      macOS's own native <code>arm64e</code> Ruby 2.6.
+    </p>
+    <p>
+      <a href="https://github.com/Dennis-Kluge/MacRuby-Hacker-News/tree/main/cocoa">Read about the bridge →</a>
+    </p>
+  </section>
+
+  <footer>
+    <p>
+      MIT licensed ·
+      <a href="https://github.com/Dennis-Kluge/MacRuby-Hacker-News">Source on GitHub</a> ·
+      Stories and comments from the Algolia Hacker News API
+    </p>
+    <p>Not affiliated with Y Combinator or Hacker News.</p>
+  </footer>
+
+</div>
+</body>
+</html>
