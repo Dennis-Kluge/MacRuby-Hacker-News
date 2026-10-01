@@ -2,6 +2,8 @@
 
 A Hacker News reader for macOS, written in Ruby.
 
+**[dennis-kluge.github.io/MacRuby-Hacker-News](https://dennis-kluge.github.io/MacRuby-Hacker-News/)**
+
 ![the reader](docs/hackernews.png)
 
 Not Ruby generating a user interface, and not a web view wearing a title bar:
