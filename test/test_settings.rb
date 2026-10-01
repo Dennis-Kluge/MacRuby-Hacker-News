@@ -376,3 +376,47 @@ class TestHackerNewsSettingsApplied < Minitest::Test
     assert_equal 1, app.stories.size
   end
 end
+
+# The preferences window is laid out top-down and then resized to fit.
+class TestHackerNewsPreferencesWindow < Minitest::Test
+  include HackerNews::AppHarness
+
+  def prefs
+    app.preferences
+  end
+
+  def content
+    prefs.window.contentView
+  end
+
+  def subviews
+    (0...content.subviews.count).map { |i| content.subviews.objectAtIndex(i) }
+  end
+
+  # It used to only ever shrink, so adding two rows pushed the last of them
+  # off the bottom and nothing said so.
+  def test_every_row_is_inside_the_window
+    height = content.frame.height
+
+    subviews.each do |view|
+      frame = view.frame
+      assert_operator frame.y, :>=, -0.5,
+                      "a row starts below the window at y=#{frame.y.round}"
+      assert_operator frame.y + frame.height, :<=, height + 0.5,
+                      "a row runs past the top of the window"
+    end
+  end
+
+  def test_the_window_grew_to_fit_its_rows
+    assert_operator content.frame.height, :>, HackerNews::Preferences::HEIGHT,
+                    'the rows need more than the starting height'
+  end
+
+  def test_the_rows_that_should_be_there_are
+    titles = subviews.map { |v| v.stringValue.to_s rescue '' }.reject(&:empty?)
+
+    ['Reading', 'Stories', 'Links', 'History', 'Saved Articles'].each do |section|
+      assert_includes titles, section
+    end
+  end
+end

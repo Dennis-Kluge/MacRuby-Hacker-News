@@ -462,11 +462,13 @@ class TestNameCollisions < Minitest::Test
 end
 
 class TestNamedStructFields < Minitest::Test
+  # A view rather than a window: what is under test is that a struct comes
+  # back from Objective-C with its field names, and a window's frame is not
+  # the one it was given -- AppKit moves it onto the screen, so the test used
+  # to depend on the shape of the screen it ran on. It passed here and failed
+  # on a CI runner, where y=20 came back as y=105.
   def setup
-    @rect = Cocoa::NSWindow.alloc.initWithContentRect_styleMask_backing_defer(
-      [10, 20, 480, 320], Cocoa::NSWindowStyleMaskTitled,
-      Cocoa::NSBackingStoreBuffered, false
-    ).frame
+    @rect = Cocoa::NSView.alloc.initWithFrame([10, 20, 480, 320]).frame
   end
 
   def test_struct_returns_carry_their_field_names
@@ -487,7 +489,7 @@ class TestNamedStructFields < Minitest::Test
   def test_it_remains_an_array
     assert_kind_of Array, @rect
     assert_equal 480.0, @rect[2]
-    assert_equal [10.0, 20.0, 480.0, @rect[3]], @rect
+    assert_equal [10.0, 20.0, 480.0, 320.0], @rect
     assert_equal 4, @rect.count
     assert_instance_of Array, @rect.to_a
   end

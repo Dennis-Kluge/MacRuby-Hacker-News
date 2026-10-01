@@ -7,7 +7,7 @@ module HackerNews
   # the shape a Mac user expects preferences to take.
   class Preferences
     WIDTH    = 520
-    HEIGHT   = 420   # generous; the window shrinks to fit once laid out
+    HEIGHT   = 420   # a starting point; the window is resized to fit
     BOTTOM_MARGIN = 18
     LEFT     = 24
     LABEL_W  = 168
@@ -147,12 +147,14 @@ module HackerNews
       fit_window
     end
 
-    # Built top-down against a generous height, then trimmed to whatever the
+    # Built top-down against a starting height, then resized to whatever the
     # rows actually needed. Beats keeping a hand-tuned constant in step with
-    # the layout.
+    # the layout -- as long as it grows as well as shrinks: it used to only
+    # trim, so adding two rows pushed the last of them off the bottom and
+    # nothing said so.
     def fit_window
       extra = @cursor - BOTTOM_MARGIN
-      return if extra <= 0
+      return if extra.zero?
 
       @content.subviews.to_a.each do |view|
         frame = view.frame
