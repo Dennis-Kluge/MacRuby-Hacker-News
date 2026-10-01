@@ -275,4 +275,4 @@ of its own.
 
 ## Licence
 
-MIT.
+MIT — see [LICENSE](LICENSE).

@@ -391,4 +391,4 @@ present on a stock system.
 
 ## Licence
 
-MIT.
+MIT, with the rest of the repository — see [LICENSE](../LICENSE).
