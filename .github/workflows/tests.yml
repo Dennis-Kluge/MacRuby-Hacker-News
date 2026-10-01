@@ -1,0 +1,47 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ruby ${{ matrix.ruby }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-14 and later are Apple Silicon, so this exercises the arm64
+        # path that has twice caught bugs an x86_64 run did not.
+        os: [macos-14, macos-15]
+        ruby: ['3.3']
+        include:
+          # One older Ruby, because the bridge is meant to work on a stock
+          # interpreter rather than a particular one.
+          - os: macos-15
+            ruby: '3.1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+
+      - name: Show what we are building against
+        run: |
+          ruby -v
+          ruby -e 'puts RUBY_PLATFORM'
+          sw_vers
+          xcrun --show-sdk-path
+
+      - name: Build the bridge
+        run: rake compile
+
+      - name: Run the tests
+        run: rake test
+
+      - name: Build the .app
+        run: rake app
