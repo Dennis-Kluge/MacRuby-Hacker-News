@@ -113,6 +113,24 @@ always leaves the app regardless.
 
 ![the built-in reader](docs/hackernews_reader.png)
 
+**The linked page, in a third column.** ⌃⌘3, and the window becomes stories,
+the page they link to, and the comments — left to right in the order you read
+them. The page loads as the selection changes, after a pause long enough that
+moving down the list with the arrow keys does not ask every site in turn for
+something nobody waited to see. A story that is its own discussion says so
+rather than loading the thread twice.
+
+![three columns](docs/hackernews_three_column.png)
+
+Three columns need room for three. When the window has not got it the article
+gives way and the stories and their comments keep the space — the window is
+never stopped from shrinking — and widening it past the threshold brings the
+column back, unless you put it away yourself. Nothing is asked of any site
+while the column is off screen, however it came to be off screen.
+
+It is off by default. Be aware of what it changes: selecting a story becomes a
+request to that site, where before you chose to open one.
+
 **Sharing.** The toolbar carries an `NSSharingServicePickerToolbarItem`, which
 draws the standard control and runs the picker itself, asking the app only for
 what to share. A story with no article of its own shares its discussion page
@@ -192,11 +210,18 @@ arrives whole, in one response, which keeps a thread to a single request.
 bin/hackernews        starts the reader
 lib/hackernews.rb     requires everything below it
 lib/hackernews/       the application
-test/                 its tests
+test/                 its tests, by subject
 tools/build_app.rb    wraps it in a .app bundle
 docs/                 screenshots
 cocoa/                the bridge it is built on, self-contained
 ```
+
+Nothing in the suite touches the preferences the reader is actually using.
+`Settings`, `ReadingHistory` and `Favorites` each read and write a store they
+are given, and the tests give them one of their own — checked by hashing the
+real defaults domain before and after a full run. It matters because the two
+share a machine: a screenshot script once left the reader launching into the
+wrong section.
 
 The models carry no AppKit at all. `StoryList`, `CommentThread`, `Query`,
 `Section`, `ReadingHistory`, `Favorites` and `Export` are plain Ruby, tested
@@ -233,8 +258,15 @@ rake app_test      # the reader
 rake bridge_test   # the bridge
 ```
 
-454 tests, 1,840 assertions, on Ruby 3.3 (`x86_64` under Rosetta) and on
-macOS's own Ruby 2.6 (native `arm64e`) alike. The API is stubbed, so they are fast and
+475 tests, 1,894 assertions, on Ruby 3.3 (`x86_64` under Rosetta) and on
+macOS's own Ruby 2.6 (native `arm64e`) alike — and on five different random
+orderings, because a suite that only passes in one order is not passing.
+
+The reader's tests are eight files by subject, each of which runs on its own.
+They were one file of 3,779 lines until it had twice hidden a mistake that a
+smaller file would have shown: a class name silently reopening another, and an
+order dependency between two tests that only appeared when a layout constraint
+changed. The API is stubbed, so they are fast and
 deterministic; `HN_LIVE=1` additionally runs the real asynchronous path.
 
 The two suites run as separate processes, because each drives the one shared

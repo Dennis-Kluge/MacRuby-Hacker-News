@@ -24,7 +24,7 @@ module HackerNews
   class BundleBuilder
     APP_NAME   = 'Hacker News'
     IDENTIFIER = 'org.example.hackernews'
-    VERSION    = '1.0'
+    VERSION    = '1.1'
 
     # The sizes macOS wants in an iconset, as [file suffix, pixel size].
     ICON_SIZES = [

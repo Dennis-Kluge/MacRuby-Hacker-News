@@ -8,7 +8,7 @@ module HackerNews
   # own class; what is left here is the conversation between them.
   class App
     APP_NAME    = 'Hacker News'
-    APP_VERSION = '1.0'
+    APP_VERSION = '1.1'
     BUNDLE_ID   = 'org.example.hackernews'
     GUIDELINES  = 'https://news.ycombinator.com/newsguidelines.html'
 
